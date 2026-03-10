@@ -156,6 +156,14 @@ class UpdateController extends Controller
         $expectedRepo = config('getfy.update_repository_url', 'https://github.com/getfy-opensource/getfy.git');
         $timeout = 300;
 
+        // PATH com o diretório do PHP em uso (evita "php não reconhecido" no Composer quando rodado pelo servidor web)
+        $phpDir = defined('PHP_BINARY') && PHP_BINARY !== '' ? dirname(PHP_BINARY) : '';
+        $pathEnv = getenv('PATH') ?: '';
+        if ($phpDir !== '') {
+            $pathEnv = $phpDir . PATH_SEPARATOR . $pathEnv;
+        }
+        $processEnv = ['PATH' => $pathEnv];
+
         // Check if .git exists
         if (! is_dir($basePath . DIRECTORY_SEPARATOR . '.git')) {
             $msg = 'Este diretório não é um repositório Git. Atualização automática indisponível.';
@@ -167,8 +175,8 @@ class UpdateController extends Controller
         }
 
         $steps = [];
-        $runStep = function (string $command, string $label) use ($basePath, $timeout, &$steps): bool {
-            $result = Process::path($basePath)->timeout($timeout)->run($command);
+        $runStep = function (string $command, string $label) use ($basePath, $timeout, $processEnv, &$steps): bool {
+            $result = Process::path($basePath)->timeout($timeout)->env($processEnv)->run($command);
             $steps[] = [
                 'label' => $label,
                 'ok' => $result->successful(),
