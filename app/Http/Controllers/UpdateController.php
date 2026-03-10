@@ -14,6 +14,27 @@ class UpdateController extends Controller
     private const GITHUB_TAGS = 'https://api.github.com/repos/getfy-opensource/getfy/tags';
 
     /**
+     * Ensure string is valid UTF-8 for JSON (avoids "Malformed UTF-8" on Windows console output).
+     */
+    private static function toUtf8(string $str): string
+    {
+        if ($str === '') {
+            return $str;
+        }
+        $utf8 = @mb_convert_encoding($str, 'UTF-8', 'UTF-8');
+        if ($utf8 !== false) {
+            return $utf8;
+        }
+        if (function_exists('iconv')) {
+            $cleaned = @iconv('UTF-8', 'UTF-8//IGNORE', $str);
+            if ($cleaned !== false) {
+                return $cleaned;
+            }
+        }
+        return preg_replace('/[^\x20-\x7E\x0A\x0D]/', '?', $str);
+    }
+
+    /**
      * Normalize version string (strip "v" prefix).
      */
     private static function normalizeVersion(string $tag): string
@@ -148,7 +169,12 @@ class UpdateController extends Controller
         $steps = [];
         $runStep = function (string $command, string $label) use ($basePath, $timeout, &$steps): bool {
             $result = Process::path($basePath)->timeout($timeout)->run($command);
-            $steps[] = ['label' => $label, 'ok' => $result->successful(), 'output' => $result->output(), 'error' => $result->errorOutput()];
+            $steps[] = [
+                'label' => $label,
+                'ok' => $result->successful(),
+                'output' => self::toUtf8($result->output()),
+                'error' => self::toUtf8($result->errorOutput()),
+            ];
             if (! $result->successful()) {
                 return false;
             }
@@ -158,7 +184,7 @@ class UpdateController extends Controller
         // 1. Git fetch + pull
         if (! $runStep("git fetch origin && git pull origin {$branch}", 'Git pull')) {
             $last = end($steps);
-            $msg = 'Falha ao atualizar código: ' . ($last['error'] ?: $last['output'] ?: 'erro desconhecido');
+            $msg = 'Falha ao atualizar código: ' . self::toUtf8($last['error'] ?: $last['output'] ?: 'erro desconhecido');
             if ($request->wantsJson()) {
                 return response()->json(['success' => false, 'message' => $msg, 'steps' => $steps], 422);
             }
@@ -169,7 +195,7 @@ class UpdateController extends Controller
         // 2. Composer install
         if (! $runStep('composer install --no-interaction --no-dev', 'Composer install')) {
             $last = end($steps);
-            $msg = 'Falha no Composer: ' . ($last['error'] ?: $last['output'] ?: 'erro desconhecido');
+            $msg = 'Falha no Composer: ' . self::toUtf8($last['error'] ?: $last['output'] ?: 'erro desconhecido');
             if ($request->wantsJson()) {
                 return response()->json(['success' => false, 'message' => $msg, 'steps' => $steps], 422);
             }
@@ -180,7 +206,7 @@ class UpdateController extends Controller
         // 3. NPM ci + build
         if (! $runStep('npm ci && npm run build', 'NPM build')) {
             $last = end($steps);
-            $msg = 'Falha no build do frontend: ' . ($last['error'] ?: $last['output'] ?: 'erro desconhecido');
+            $msg = 'Falha no build do frontend: ' . self::toUtf8($last['error'] ?: $last['output'] ?: 'erro desconhecido');
             if ($request->wantsJson()) {
                 return response()->json(['success' => false, 'message' => $msg, 'steps' => $steps], 422);
             }
@@ -192,7 +218,7 @@ class UpdateController extends Controller
         try {
             \Illuminate\Support\Facades\Artisan::call('migrate', ['--force' => true]);
         } catch (\Throwable $e) {
-            $msg = 'Falha nas migrations: ' . $e->getMessage();
+            $msg = 'Falha nas migrations: ' . self::toUtf8($e->getMessage());
             if ($request->wantsJson()) {
                 return response()->json(['success' => false, 'message' => $msg, 'steps' => $steps], 422);
             }
