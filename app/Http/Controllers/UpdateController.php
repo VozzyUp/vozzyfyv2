@@ -181,6 +181,9 @@ class UpdateController extends Controller
             return true;
         };
 
+        // 0. Garantir identidade Git (evita "Committer identity unknown" ao fazer pull/merge)
+        $runStep('git config user.email "getfy-update@localhost" && git config user.name "Getfy Update"', 'Git config');
+
         // 1. Git fetch + pull
         if (! $runStep("git fetch origin && git pull origin {$branch}", 'Git pull')) {
             $last = end($steps);
