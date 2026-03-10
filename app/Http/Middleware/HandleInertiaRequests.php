@@ -1,0 +1,138 @@
+<?php
+
+namespace App\Http\Middleware;
+
+use App\Plugins\PluginRegistry;
+use App\Services\SalesAchievementsService;
+use App\Services\StorageService;
+use Illuminate\Http\Request;
+use Inertia\Middleware;
+
+class HandleInertiaRequests extends Middleware
+{
+    /**
+     * The root template that's loaded on the first page visit.
+     *
+     * @see https://inertiajs.com/server-side-setup#root-template
+     *
+     * @var string
+     */
+    protected $rootView = 'app';
+
+    /**
+     * Determines the current asset version.
+     *
+     * @see https://inertiajs.com/asset-versioning
+     */
+    public function version(Request $request): ?string
+    {
+        return parent::version($request);
+    }
+
+    /**
+     * Define the props that are shared by default.
+     *
+     * @see https://inertiajs.com/shared-data
+     *
+     * @return array<string, mixed>
+     */
+    public function share(Request $request): array
+    {
+        $user = $request->user();
+        $tenantId = $user?->tenant_id;
+
+        $appSettings = $user ? [
+            'app_name' => config('getfy.app_name'),
+            'theme_primary' => config('getfy.theme_primary'),
+            'app_logo' => config('getfy.app_logo'),
+            'app_logo_dark' => config('getfy.app_logo_dark'),
+            'app_logo_icon' => config('getfy.app_logo_icon'),
+            'app_logo_icon_dark' => config('getfy.app_logo_icon_dark'),
+        ] : null;
+
+        $pageTitle = $this->pageTitleForRoute($request->route()?->getName());
+
+        $pluginNavItems = [];
+        $plugins = [];
+        $achievementsProgress = null;
+        $pushEnabled = false;
+        $vapidPublic = null;
+        if ($user && $user->canAccessPanel()) {
+            $pluginNavItems = PluginRegistry::getMenuItems();
+            $vapidPublic = config('getfy.pwa.vapid_public');
+            $pushEnabled = ! empty($vapidPublic) && ! empty(config('getfy.pwa.vapid_private'));
+            $installed = PluginRegistry::installed();
+            $plugins = array_map(fn ($p) => [
+                'slug' => $p['slug'],
+                'name' => $p['name'],
+                'version' => $p['version'],
+                'is_enabled' => $p['is_enabled'],
+            ], $installed);
+            $achievementsProgress = app(SalesAchievementsService::class)->getProgressForTenant($user->tenant_id);
+        }
+
+        return [
+            ...parent::share($request),
+            'app_url' => rtrim(config('app.url'), '/'),
+            'pageTitle' => $pageTitle,
+            'auth' => [
+                'user' => $user ? [
+                    'id' => $user->id,
+                    'name' => $user->name,
+                    'email' => $user->email,
+                    'username' => $user->username,
+                    'role' => $user->role,
+                    'avatar_url' => $user->avatar ? app(StorageService::class)->url($user->avatar) : null,
+                ] : null,
+            ],
+            'flash' => [
+                'success' => $request->session()->get('success'),
+                'error' => $request->session()->get('error'),
+                'info' => $request->session()->get('info'),
+                'status' => $request->session()->get('status'),
+                'zip_unavailable' => $request->session()->get('zip_unavailable'),
+                'newly_unlocked_achievements' => $request->session()->get('newly_unlocked_achievements'),
+            ],
+            'platform' => null,
+            'appSettings' => $appSettings,
+            'pluginNavItems' => $pluginNavItems,
+            'plugins' => $plugins,
+            'achievementsProgress' => $achievementsProgress,
+            'push_enabled' => $pushEnabled,
+            'vapid_public' => $pushEnabled ? $vapidPublic : null,
+            'pwa_manifest_url' => url('/manifest.json'),
+            'pwa_sw_url' => url('/painel-sw.js'),
+        ];
+    }
+
+    private function pageTitleForRoute(?string $name): ?string
+    {
+        $titles = [
+            'dashboard' => 'Dashboard',
+            'vendas.index' => 'Vendas',
+            'produtos.index' => 'Produtos',
+            'produtos.create' => 'Novo produto',
+            'produtos.edit' => 'Editar produto',
+            'cupons.index' => 'Cupons',
+            'assinaturas.index' => 'Assinaturas',
+            'alunos.index' => 'Alunos',
+            'relatorios.index' => 'Relatórios',
+            'settings.index' => 'Configurações',
+            'profile.index' => 'Meu perfil',
+            'integrations.index' => 'Integrações',
+            'plugins.index' => 'Plugins',
+            'checkout.builder' => 'Editar checkout',
+            'usuarios.index' => 'Usuários',
+            'usuarios.create' => 'Novo infoprodutor',
+            'email-marketing.index' => 'E-mail Marketing',
+            'email-marketing.create' => 'Nova campanha',
+            'email-marketing.edit' => 'Editar campanha',
+            'api-applications.index' => 'API de Pagamentos',
+            'api-applications.create' => 'Nova aplicação API',
+            'api-applications.edit' => 'Editar aplicação API',
+            'conquistas.index' => 'Conquistas',
+        ];
+
+        return $name ? ($titles[$name] ?? null) : null;
+    }
+}

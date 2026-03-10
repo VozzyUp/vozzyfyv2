@@ -1,0 +1,53 @@
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: getfy_app:latest
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./:/var/www/html
+    env_file:
+      - .env.docker
+    depends_on:
+      - mysql
+      - redis
+    command: ["php", "artisan", "serve", "--host=0.0.0.0"]
+
+  mysql:
+    image: mysql:8.0
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: root
+      MYSQL_DATABASE: infoprodutor
+      MYSQL_USER: infoprodutor
+      MYSQL_PASSWORD: secret
+    ports:
+      - "3307:3306"
+    volumes:
+      - mysql_data:/var/lib/mysql
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+
+  queue:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: getfy_app:latest
+    command: ["php", "artisan", "queue:work", "--sleep=3", "--tries=3", "--timeout=0"]
+    volumes:
+      - ./:/var/www/html
+    env_file:
+      - .env.docker
+    depends_on:
+      - mysql
+      - redis
+
+volumes:
+  mysql_data:
+    driver: local
