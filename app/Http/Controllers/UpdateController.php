@@ -10,10 +10,55 @@ use Illuminate\Support\Facades\Process;
 
 class UpdateController extends Controller
 {
-    private const GITHUB_API = 'https://api.github.com/repos/getfy-opensource/getfy/releases/latest';
+    private const GITHUB_RELEASES_LATEST = 'https://api.github.com/repos/getfy-opensource/getfy/releases/latest';
+    private const GITHUB_TAGS = 'https://api.github.com/repos/getfy-opensource/getfy/tags';
 
     /**
-     * Check for updates (GitHub Releases API).
+     * Normalize version string (strip "v" prefix).
+     */
+    private static function normalizeVersion(string $tag): string
+    {
+        return ltrim(trim($tag), 'v');
+    }
+
+    /**
+     * Get latest version from GitHub tags API (fallback when there are no releases).
+     */
+    private function getLatestFromTags(): ?string
+    {
+        $res = Http::timeout(10)
+            ->withHeaders(['Accept' => 'application/vnd.github+json'])
+            ->get(self::GITHUB_TAGS);
+
+        if (! $res->successful()) {
+            return null;
+        }
+
+        $tags = $res->json();
+        if (! is_array($tags) || empty($tags)) {
+            return null;
+        }
+
+        $latest = null;
+        foreach ($tags as $tag) {
+            $name = $tag['name'] ?? '';
+            $ver = self::normalizeVersion((string) $name);
+            if ($ver === '') {
+                continue;
+            }
+            if (! preg_match('/^\d+\.\d+(\.\d+)?/', $ver)) {
+                continue;
+            }
+            if ($latest === null || version_compare($ver, $latest, '>')) {
+                $latest = $ver;
+            }
+        }
+
+        return $latest;
+    }
+
+    /**
+     * Check for updates (GitHub Releases API, fallback to Tags API).
      */
     public function check(): JsonResponse
     {
@@ -29,29 +74,41 @@ class UpdateController extends Controller
         try {
             $res = Http::timeout(10)
                 ->withHeaders(['Accept' => 'application/vnd.github+json'])
-                ->get(self::GITHUB_API);
+                ->get(self::GITHUB_RELEASES_LATEST);
+
+            if ($res->successful()) {
+                $data = $res->json();
+                $tagName = $data['tag_name'] ?? '';
+                $latest = self::normalizeVersion((string) $tagName);
+                $response['latest'] = $latest;
+                $response['changelog_remote'] = $data['body'] ?? null;
+
+                if ($latest !== '' && version_compare($latest, $current, '>')) {
+                    $response['available'] = true;
+                }
+
+                return response()->json($response);
+            }
 
             if ($res->status() === 404) {
-                $response['error'] = 'Nenhuma release encontrada no repositório.';
+                $latestFromTags = $this->getLatestFromTags();
+                if ($latestFromTags !== null) {
+                    $response['latest'] = $latestFromTags;
+                    if (version_compare($latestFromTags, $current, '>')) {
+                        $response['available'] = true;
+                    }
+                    $response['error'] = null;
+
+                    return response()->json($response);
+                }
+                $response['error'] = 'Nenhuma release nem tag de versão encontrada. Crie uma Release ou uma tag (ex: v1.0.0) no GitHub.';
 
                 return response()->json($response);
             }
 
-            if (! $res->successful()) {
-                $response['error'] = 'Não foi possível verificar atualizações. Tente novamente mais tarde.';
+            $response['error'] = 'Não foi possível verificar atualizações. Tente novamente mais tarde.';
 
-                return response()->json($response);
-            }
-
-            $data = $res->json();
-            $tagName = $data['tag_name'] ?? '';
-            $latest = ltrim((string) $tagName, 'v');
-            $response['latest'] = $latest;
-            $response['changelog_remote'] = $data['body'] ?? null;
-
-            if ($latest !== '' && version_compare($latest, $current, '>')) {
-                $response['available'] = true;
-            }
+            return response()->json($response);
         } catch (\Throwable $e) {
             $response['error'] = 'Erro ao verificar: ' . $e->getMessage();
         }
