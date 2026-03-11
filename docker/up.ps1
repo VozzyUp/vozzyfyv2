@@ -16,6 +16,8 @@ if (!(Test-Path $envFile)) {
 DB_DATABASE=getfy
 DB_USERNAME=$dbUser
 DB_PASSWORD=$dbPass
+APP_URL=http://localhost
+GETFY_HTTP_PORT=80
 MYSQL_DATABASE=getfy
 MYSQL_USER=$dbUser
 MYSQL_PASSWORD=$dbPass

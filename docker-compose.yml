@@ -6,7 +6,7 @@ services:
     image: getfy_app:latest
     restart: unless-stopped
     ports:
-      - "8000:8000"
+      - "${GETFY_HTTP_PORT:-80}:8000"
     volumes:
       - getfy_storage:/var/www/html/storage
       - getfy_env:/var/www/html/.docker
