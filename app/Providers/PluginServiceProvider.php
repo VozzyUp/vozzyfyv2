@@ -31,9 +31,11 @@ class PluginServiceProvider extends ServiceProvider
      */
     private function getPluginsToLoad(): array
     {
-        if (\Illuminate\Support\Facades\Schema::hasTable('plugins')) {
-            return PluginRegistry::enabled();
-        }
+        try {
+            if (\Illuminate\Support\Facades\Schema::hasTable('plugins')) {
+                return PluginRegistry::enabled();
+            }
+        } catch (\Throwable) {}
         return $this->fallbackInstalledFromDisk();
     }
 

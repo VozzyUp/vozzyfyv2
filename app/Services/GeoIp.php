@@ -66,7 +66,7 @@ class GeoIp
             return [
                 'country_code' => null,
                 'suggested_locale' => self::LOCALE_PT_BR,
-                'suggested_currency' => self::CURRENCY_USD, // fallback global
+                'suggested_currency' => self::CURRENCY_BRL, // fallback: Brasil como padrão (localhost/indeterminado)
             ];
         }
         return [

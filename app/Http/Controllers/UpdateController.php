@@ -156,10 +156,20 @@ class UpdateController extends Controller
         $expectedRepo = config('getfy.update_repository_url', 'https://github.com/getfy-opensource/getfy.git');
         $timeout = 300;
 
-        // PATH com o diretório do PHP em uso (evita "php não reconhecido" no Composer quando rodado pelo servidor web)
-        $phpDir = defined('PHP_BINARY') && PHP_BINARY !== '' ? dirname(PHP_BINARY) : '';
+        // PHP executável (servidor web muitas vezes não tem PHP no PATH; usar caminho explícito ou GETFY_PHP_PATH)
+        $phpBinary = null;
+        if (defined('PHP_BINARY') && PHP_BINARY !== '') {
+            $phpBinary = PHP_BINARY;
+        } elseif (config('getfy.php_path')) {
+            $phpPath = rtrim(str_replace(['/', '\\'], DIRECTORY_SEPARATOR, config('getfy.php_path')), DIRECTORY_SEPARATOR);
+            $phpBinary = $phpPath . DIRECTORY_SEPARATOR . 'php.exe';
+            if (! is_file($phpBinary)) {
+                $phpBinary = $phpPath . DIRECTORY_SEPARATOR . 'php';
+            }
+        }
         $pathEnv = getenv('PATH') ?: '';
-        if ($phpDir !== '') {
+        if ($phpBinary !== null && $phpBinary !== '') {
+            $phpDir = dirname($phpBinary);
             $pathEnv = $phpDir . PATH_SEPARATOR . $pathEnv;
         }
         $processEnv = ['PATH' => $pathEnv];
@@ -210,8 +220,12 @@ class UpdateController extends Controller
         // 1.1. Reaplicar alterações locais (se havia algo no stash)
         $runStep('git stash pop', 'Git stash pop');
 
-        // 2. Composer install
-        if (! $runStep('composer install --no-interaction --no-dev', 'Composer install')) {
+        // 2. Composer install (usar PHP explícito quando disponível, para evitar "php não reconhecido" no servidor web)
+        $composerCmd = 'composer install --no-interaction --no-dev';
+        if ($phpBinary !== null && $phpBinary !== '' && is_file($phpBinary)) {
+            $composerCmd = '"' . $phpBinary . '" vendor' . DIRECTORY_SEPARATOR . 'bin' . DIRECTORY_SEPARATOR . 'composer install --no-interaction --no-dev';
+        }
+        if (! $runStep($composerCmd, 'Composer install')) {
             $last = end($steps);
             $msg = 'Falha no Composer: ' . self::toUtf8($last['error'] ?: $last['output'] ?: 'erro desconhecido');
             if ($request->wantsJson()) {

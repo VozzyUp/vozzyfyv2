@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Models\PanelPushSubscription;
+use App\Services\MemberAreaResolver;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
@@ -10,40 +11,65 @@ class PanelPwaController extends Controller
 {
     public function manifest(Request $request): JsonResponse
     {
-        $baseUrl = rtrim($request->getSchemeAndHttpHost(), '/');
+        $resolved = app(MemberAreaResolver::class)->resolve($request);
+        if ($resolved && in_array($resolved['access_type'], ['subdomain', 'custom'], true)) {
+            $request->attributes->set('member_area_product', $resolved['product']);
+            $request->attributes->set('member_area_access_type', $resolved['access_type']);
+            $request->attributes->set('member_area_slug', $resolved['slug']);
+
+            return app()->call(\App\Http\Controllers\MemberAreaAppController::class.'@manifest', [
+                'request' => $request,
+                'slug' => $resolved['slug'],
+            ]);
+        }
+
         $appName = config('getfy.app_name', 'Getfy');
         $themeColor = config('getfy.theme_primary', '#0ea5e9');
 
         $icons = [];
-        $icon192 = asset('icons/icon-192x192.png');
-        $icon512 = asset('icons/icon-512x512.png');
-        if (file_exists(public_path('icons/icon-192x192.png'))) {
-            $icons[] = ['src' => $icon192, 'sizes' => '192x192', 'type' => 'image/png', 'purpose' => 'any maskable'];
+        $addIconVariants = function (string $src, string $sizes) use (&$icons): void {
+            $icons[] = ['src' => $src, 'sizes' => $sizes, 'type' => 'image/png', 'purpose' => 'any'];
+            $icons[] = ['src' => $src, 'sizes' => $sizes, 'type' => 'image/png', 'purpose' => 'maskable'];
+        };
+        $iconsDir = public_path('icons');
+        $has192 = is_file($iconsDir.'/icon-192x192.png');
+        $has512 = is_file($iconsDir.'/icon-512x512.png');
+        $icon192Url = url('/icons/icon-192x192.png');
+        $icon512Url = url('/icons/icon-512x512.png');
+
+        if ($has192) {
+            $addIconVariants($icon192Url, '192x192');
         }
-        if (file_exists(public_path('icons/icon-512x512.png'))) {
-            $icons[] = ['src' => $icon512, 'sizes' => '512x512', 'type' => 'image/png', 'purpose' => 'any maskable'];
+        if ($has512) {
+            $addIconVariants($icon512Url, '512x512');
         }
         if (empty($icons)) {
-            $icons[] = [
-                'src' => config('getfy.app_logo_icon', 'https://cdn.getfy.cloud/collapsed-logo.png'),
-                'sizes' => '192x192',
-                'type' => 'image/png',
-                'purpose' => 'any maskable',
-            ];
+            $fallbackIcon = (string) config('getfy.app_logo_icon', 'https://cdn.getfy.cloud/collapsed-logo.png');
+            $addIconVariants($fallbackIcon, '192x192');
+            $addIconVariants($fallbackIcon, '512x512');
+        } elseif ($has512 && ! $has192) {
+            $addIconVariants($icon512Url, '192x192');
+        } elseif ($has192 && ! $has512) {
+            $addIconVariants($icon192Url, '512x512');
         }
 
         $manifest = [
+            'id' => '/',
             'name' => $appName,
             'short_name' => $appName,
-            'start_url' => $baseUrl . '/',
-            'scope' => $baseUrl . '/',
+            'start_url' => '/login',
+            'scope' => '/',
             'display' => 'standalone',
             'background_color' => '#18181b',
             'theme_color' => $themeColor,
+            'prefer_related_applications' => false,
             'icons' => $icons,
         ];
 
-        return response()->json($manifest)->header('Content-Type', 'application/manifest+json');
+        return response()
+            ->json($manifest)
+            ->header('Content-Type', 'application/manifest+json')
+            ->header('Cache-Control', 'public, max-age=0, must-revalidate');
     }
 
     public function pushSubscribe(Request $request): JsonResponse
@@ -60,18 +86,40 @@ class PanelPwaController extends Controller
             return response()->json(['message' => 'Acesso negado.'], 403);
         }
 
-        PanelPushSubscription::updateOrCreate(
+        $keys = $validated['keys'];
+        $keys['auth'] = $this->normalizeBase64KeyForPush((string) ($keys['auth'] ?? ''));
+        $keys['p256dh'] = $this->normalizeBase64KeyForPush((string) ($keys['p256dh'] ?? ''));
+
+        $subscription = PanelPushSubscription::updateOrCreate(
+            [
+                'endpoint' => $validated['endpoint'],
+            ],
             [
                 'user_id' => $user->id,
                 'tenant_id' => $user->tenant_id,
-            ],
-            [
-                'endpoint' => $validated['endpoint'],
-                'keys' => $validated['keys'],
+                'keys' => $keys,
                 'user_agent' => $request->userAgent(),
             ]
         );
 
-        return response()->json(['success' => true]);
+        return response()->json([
+            'success' => true,
+            'subscribed' => true,
+            'subscription_id' => $subscription->id,
+            'updated_at' => $subscription->updated_at?->toISOString(),
+        ]);
+    }
+
+    private function normalizeBase64KeyForPush(string $key): string
+    {
+        $key = trim($key);
+        if ($key === '') {
+            return $key;
+        }
+        if (str_contains($key, '+') || str_contains($key, '/')) {
+            return strtr($key, ['+' => '-', '/' => '_']);
+        }
+
+        return $key;
     }
 }

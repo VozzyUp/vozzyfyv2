@@ -345,7 +345,9 @@ function submitManualInstall() {
 </script>
 
 <template>
-    <div class="space-y-6">
+    <div class="relative">
+        <!-- Conteúdo com blur e não clicável -->
+        <div class="space-y-6 pointer-events-none select-none blur-md">
         <nav
             class="inline-flex flex-wrap gap-1 rounded-xl bg-zinc-100/80 p-1 dark:bg-zinc-800/80"
             aria-label="Abas de plugins"
@@ -791,5 +793,15 @@ function submitManualInstall() {
                 </div>
             </div>
         </Teleport>
+
+        </div>
+        <!-- Overlay "Em breve" — bloqueia interação -->
+        <div
+            class="absolute inset-0 z-10 flex items-center justify-center bg-white/80 dark:bg-zinc-900/80 backdrop-blur-sm"
+        >
+            <span class="text-2xl font-semibold text-zinc-700 dark:text-zinc-200">
+                Em breve..
+            </span>
+        </div>
     </div>
 </template>

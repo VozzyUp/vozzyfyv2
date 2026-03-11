@@ -1,11 +1,13 @@
 <script setup>
-import { computed, watchEffect } from 'vue';
+import { computed, ref, watch, watchEffect, provide } from 'vue';
 import { usePage } from '@inertiajs/vue3';
 import { useSidebarProvider } from '@/composables/useSidebar';
 import { usePanelPushSubscribe } from '@/composables/usePanelPushSubscribe';
 import AppSidebar from '@/components/layout/AppSidebar.vue';
 import AppHeader from '@/components/layout/AppHeader.vue';
+import MobileBottomNav from '@/components/layout/MobileBottomNav.vue';
 import PwaInstallPrompt from '@/components/layout/PwaInstallPrompt.vue';
+import NotificationsPanel from '@/components/layout/NotificationsPanel.vue';
 import Backdrop from '@/components/layout/Backdrop.vue';
 import FlashToast from '@/components/layout/FlashToast.vue';
 
@@ -16,6 +18,23 @@ const pageTitle = computed(() => page.props.pageTitle ?? null);
 const pageTitleBadge = computed(() => page.props.pageTitleBadge ?? null);
 const contentMaxWidth = computed(() => (page.props.layoutFullWidth ? 'max-w-[1600px]' : 'max-w-7xl'));
 const layoutContentFlushLeft = computed(() => !!page.props.layoutContentFlushLeft);
+
+const showNotificationsPanel = ref(false);
+const notificationsUnreadCount = ref(page.props.notifications_unread_count ?? 0);
+watch(
+    () => page.props.notifications_unread_count,
+    (v) => {
+        notificationsUnreadCount.value = v ?? 0;
+    }
+);
+provide('openNotificationsPanel', () => {
+    showNotificationsPanel.value = true;
+});
+provide('notificationsUnreadCount', notificationsUnreadCount);
+
+function onNotificationsUnreadCountUpdate(count) {
+    notificationsUnreadCount.value = count;
+}
 
 watchEffect(() => {
     const primary = page.props.appSettings?.theme_primary || '#0ea5e9';
@@ -40,10 +59,16 @@ watchEffect(() => {
             </div>
             <FlashToast />
             <PwaInstallPrompt />
+            <NotificationsPanel
+                :open="showNotificationsPanel"
+                @update:open="showNotificationsPanel = $event"
+                @unread-count-update="onNotificationsUnreadCountUpdate"
+            />
+            <MobileBottomNav />
             <div
                 class="flex min-h-0 flex-1 flex-col overflow-hidden rounded-2xl bg-white shadow-sm dark:bg-zinc-800"
             >
-                <main class="flex-1 px-4 pb-6 pt-4 md:px-6 md:pb-8 md:pt-6">
+                <main class="flex-1 px-4 pb-24 pt-4 md:px-6 md:pt-6 lg:pb-8">
                     <div
                         class="w-full"
                         :class="[

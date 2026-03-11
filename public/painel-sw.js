@@ -1,4 +1,21 @@
 /* Service worker for panel PWA */
+self.addEventListener('fetch', function (event) {
+  // Necessário para o Chrome Android considerar o app instalável como PWA (não só atalho).
+  if (event.request.method !== 'GET') return;
+  let url;
+  try {
+    url = new URL(event.request.url);
+  } catch (_) {
+    return;
+  }
+  if (url.protocol !== 'http:' && url.protocol !== 'https:') return;
+  event.respondWith(
+    fetch(event.request).catch(function () {
+      return Response.error();
+    })
+  );
+});
+
 self.addEventListener('install', function () {
   self.skipWaiting();
 });
@@ -17,7 +34,7 @@ self.addEventListener('push', function (event) {
       payload.body = event.data.text();
     } catch (_) {}
   }
-  const icon = '/icons/icon-192x192.png';
+  const icon = '/icons/notification.png';
   event.waitUntil(
     self.registration.showNotification(payload.title, {
       body: payload.body,

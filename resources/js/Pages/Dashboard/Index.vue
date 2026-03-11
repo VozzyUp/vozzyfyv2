@@ -1,11 +1,26 @@
 <script setup>
 import { ref, computed, onMounted } from 'vue';
-import { router } from '@inertiajs/vue3';
+import { router, usePage } from '@inertiajs/vue3';
+import {
+    SelectContent,
+    SelectItem,
+    SelectItemIndicator,
+    SelectItemText,
+    SelectPortal,
+    SelectRoot,
+    SelectTrigger,
+    SelectValue,
+    SelectViewport,
+} from 'radix-vue';
 import VueApexCharts from 'vue3-apexcharts';
 import LayoutInfoprodutor from '@/Layouts/LayoutInfoprodutor.vue';
-import { CircleDollarSign, ShoppingCart, CreditCard, ShoppingBag, RotateCcw, Package, Eye, EyeOff } from 'lucide-vue-next';
+import ConquistasWidget from '@/components/layout/ConquistasWidget.vue';
+import { CircleDollarSign, ShoppingCart, CreditCard, ShoppingBag, RotateCcw, Package, Eye, EyeOff, ChevronDown, Check } from 'lucide-vue-next';
 
 defineOptions({ layout: LayoutInfoprodutor });
+
+const page = usePage();
+const hasAchievementsProgress = computed(() => !!(page.props.achievementsProgress ?? null));
 
 const valuesVisible = ref(true);
 const isDarkMode = ref(false);
@@ -132,9 +147,59 @@ const chartOptions = computed(() => ({
 
 <template>
     <div class="space-y-6">
+        <!-- Barrinha de progresso (Conquistas) - só no mobile -->
+        <div v-if="hasAchievementsProgress" class="lg:hidden">
+            <ConquistasWidget variant="dashboard" />
+        </div>
+
         <!-- Barra de período + olho -->
         <div class="flex flex-wrap items-center justify-between gap-3">
-            <nav class="flex flex-wrap items-center gap-1" aria-label="Período">
+            <!-- Mobile: dropdown + olho ao lado -->
+            <div class="flex items-center gap-2 lg:hidden">
+                <SelectRoot :model-value="period" @update:model-value="setPeriod">
+                    <SelectTrigger
+                        type="button"
+                        aria-label="Período"
+                        class="flex h-10 w-[240px] shrink-0 cursor-pointer items-center justify-between gap-2 rounded-xl border border-zinc-200 bg-white px-4 py-2 text-left text-sm transition hover:border-zinc-300 focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)]/20 focus:ring-offset-0 dark:border-zinc-600 dark:bg-zinc-800 dark:text-white dark:hover:border-zinc-500"
+                    >
+                        <SelectValue placeholder="Período" />
+                        <ChevronDown class="h-4 w-4 shrink-0 text-zinc-400 dark:text-zinc-500" aria-hidden="true" />
+                    </SelectTrigger>
+                    <SelectPortal to="body">
+                        <SelectContent
+                            class="z-[9999] min-w-[var(--radix-select-trigger-width)] overflow-hidden rounded-xl border border-zinc-200 bg-white py-1 shadow-xl dark:border-zinc-600 dark:bg-zinc-800"
+                            :side-offset="4"
+                            position="popper"
+                            :avoid-collisions="true"
+                        >
+                            <SelectViewport class="p-1">
+                                <SelectItem
+                                    v-for="opt in periodOptions"
+                                    :key="opt.value"
+                                    :value="opt.value"
+                                    class="relative flex cursor-pointer select-none items-center rounded-lg py-2.5 pl-10 pr-4 text-sm outline-none transition data-[highlighted]:bg-[var(--color-primary)]/10 data-[highlighted]:text-[var(--color-primary)] data-[state=checked]:bg-[var(--color-primary)]/10 data-[state=checked]:text-[var(--color-primary)] dark:data-[highlighted]:bg-[var(--color-primary)]/20 dark:data-[state=checked]:bg-[var(--color-primary)]/20"
+                                >
+                                    <SelectItemIndicator class="absolute left-3 flex h-4 w-4 items-center justify-center">
+                                        <Check class="h-4 w-4 text-[var(--color-primary)]" />
+                                    </SelectItemIndicator>
+                                    <SelectItemText>{{ opt.label }}</SelectItemText>
+                                </SelectItem>
+                            </SelectViewport>
+                        </SelectContent>
+                    </SelectPortal>
+                </SelectRoot>
+                <button
+                    type="button"
+                    :aria-label="valuesVisible ? 'Ocultar valores' : 'Mostrar valores'"
+                    class="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-zinc-200 bg-white text-zinc-500 transition-colors hover:bg-zinc-50 hover:text-zinc-700 dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-400 dark:hover:bg-zinc-700 dark:hover:text-zinc-200"
+                    @click="valuesVisible = !valuesVisible"
+                >
+                    <Eye v-if="valuesVisible" class="h-5 w-5" aria-hidden="true" />
+                    <EyeOff v-else class="h-5 w-5" aria-hidden="true" />
+                </button>
+            </div>
+            <!-- Desktop: abas -->
+            <nav class="hidden flex-wrap items-center gap-1 lg:flex" aria-label="Período">
                 <button
                     v-for="opt in periodOptions"
                     :key="opt.value"
@@ -149,10 +214,11 @@ const chartOptions = computed(() => ({
                     {{ opt.label }}
                 </button>
             </nav>
+            <!-- Desktop: olho -->
             <button
                 type="button"
                 :aria-label="valuesVisible ? 'Ocultar valores' : 'Mostrar valores'"
-                class="flex h-9 w-9 items-center justify-center rounded-lg text-zinc-500 transition-colors hover:bg-zinc-100 hover:text-zinc-700 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-200"
+                class="hidden h-9 w-9 shrink-0 items-center justify-center rounded-lg text-zinc-500 transition-colors hover:bg-zinc-100 hover:text-zinc-700 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-200 lg:flex"
                 @click="valuesVisible = !valuesVisible"
             >
                 <Eye v-if="valuesVisible" class="h-5 w-5" aria-hidden="true" />

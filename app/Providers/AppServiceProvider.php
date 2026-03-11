@@ -2,9 +2,11 @@
 
 namespace App\Providers;
 
+use App\Events\BoletoGenerated;
 use App\Events\OrderCompleted;
 use App\Events\PixGenerated;
 use App\Listeners\SendAccessEmailOnOrderCompleted;
+use App\Listeners\SendPanelPushOnBoletoGenerated;
 use App\Listeners\SendPanelPushOnOrderCompleted;
 use App\Listeners\SendPanelPushOnPixGenerated;
 use App\Listeners\SpedyEventSubscriber;
@@ -50,6 +52,7 @@ class AppServiceProvider extends ServiceProvider
         Event::listen(OrderCompleted::class, SendAccessEmailOnOrderCompleted::class);
         Event::listen(OrderCompleted::class, SendPanelPushOnOrderCompleted::class);
         Event::listen(PixGenerated::class, SendPanelPushOnPixGenerated::class);
+        Event::listen(BoletoGenerated::class, SendPanelPushOnBoletoGenerated::class);
         Event::subscribe(WebhookEventSubscriber::class);
         Event::subscribe(SendApiApplicationWebhookListener::class);
         Event::subscribe(UtmifyEventSubscriber::class);

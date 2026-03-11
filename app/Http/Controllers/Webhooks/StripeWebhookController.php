@@ -77,11 +77,7 @@ class StripeWebhookController extends Controller
             $paymentIntent = $event->data->object;
             $piId = $paymentIntent->id ?? null;
             if ($piId) {
-                if (app()->environment('local')) {
-                    ProcessPaymentWebhook::dispatchSync('stripe', $piId, 'payment_intent.succeeded', 'paid', $payloadData);
-                } else {
-                    ProcessPaymentWebhook::dispatch('stripe', $piId, 'payment_intent.succeeded', 'paid', $payloadData);
-                }
+                ProcessPaymentWebhook::dispatchSync('stripe', $piId, 'payment_intent.succeeded', 'paid', $payloadData);
             }
         }
 

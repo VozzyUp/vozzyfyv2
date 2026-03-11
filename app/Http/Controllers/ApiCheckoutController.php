@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Events\BoletoGenerated;
 use App\Events\OrderCompleted;
 use App\Events\OrderPending;
 use App\Events\PixGenerated;
@@ -251,6 +252,13 @@ class ApiCheckoutController extends Controller
             try {
                 event(new OrderPending($order));
                 $result = $paymentService->createBoletoPayment($order, $product, $consumer, $gatewayConfig);
+                $boletoData = [
+                    'amount' => $result['amount'] ?? $amount,
+                    'expire_at' => $result['expire_at'] ?? null,
+                    'barcode' => $result['barcode'] ?? null,
+                    'pdf_url' => $result['pdf_url'] ?? null,
+                ];
+                event(new BoletoGenerated($order, $boletoData));
                 $boletoToken = Str::random(32);
                 $amountFormatted = 'R$ ' . number_format($result['amount'] ?? $amount, 2, ',', '.');
                 session()->put('boleto_display.' . $boletoToken, [

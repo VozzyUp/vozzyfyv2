@@ -3,6 +3,7 @@ import { ref, computed } from 'vue';
 // Estado compartilhado entre Login e PwaInstallPrompt (mesma página)
 const installPromptEvent = ref(typeof window !== 'undefined' ? window.__pwaInstallPrompt ?? null : null);
 const showIosInstructions = ref(false);
+const showNotificationPromptAfterInstall = ref(false);
 let listenerRegistered = false;
 
 function handleBeforeInstallPrompt(e) {
@@ -51,6 +52,15 @@ export function usePwaInstall(slug = '') {
         () => isMobile.value && !isStandalone.value
     );
 
+    const isSecureContextForPwa = computed(() => {
+        if (typeof window === 'undefined') return false;
+        return window.isSecureContext === true;
+    });
+
+    const canTriggerNativeInstallPrompt = computed(() => {
+        return !!installPromptEvent.value && isSecureContextForPwa.value;
+    });
+
     function tryGetDismissed() {
         try {
             const t = localStorage.getItem(STORAGE_KEY);
@@ -75,7 +85,10 @@ export function usePwaInstall(slug = '') {
             installPromptEvent.value.prompt();
             try {
                 const { outcome } = await installPromptEvent.value.userChoice;
-                if (outcome === 'accepted') installPromptEvent.value = null;
+                if (outcome === 'accepted') {
+                    installPromptEvent.value = null;
+                    showNotificationPromptAfterInstall.value = true;
+                }
             } catch (_) {
                 installPromptEvent.value = null;
             }
@@ -100,12 +113,27 @@ export function usePwaInstall(slug = '') {
         installPromptEvent.value = null;
     }
 
+    /** Sincroniza o ref com window.__pwaInstallPrompt (evento pode ter disparado antes da hidratação Vue). */
+    function syncInstallPromptFromWindow() {
+        if (typeof window !== 'undefined' && window.__pwaInstallPrompt && !installPromptEvent.value) {
+            installPromptEvent.value = window.__pwaInstallPrompt;
+        }
+    }
+
+    /** Abre o card de instruções iOS (Adicionar à tela inicial). */
+    function openIosInstructions() {
+        showIosInstructions.value = true;
+    }
+
     return {
         installPromptEvent,
         showIosInstructions,
+        showNotificationPromptAfterInstall,
         isStandalone,
         isMobile,
         isIos,
+        isSecureContextForPwa,
+        canTriggerNativeInstallPrompt,
         canShowInstallButton,
         tryGetDismissed,
         dismiss,
@@ -113,5 +141,7 @@ export function usePwaInstall(slug = '') {
         registerListener,
         unregisterListener,
         handleBeforeInstallPromptInComponent,
+        syncInstallPromptFromWindow,
+        openIosInstructions,
     };
 }

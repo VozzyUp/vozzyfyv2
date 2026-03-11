@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use App\Models\PanelNotification;
 use App\Models\PanelPushSubscription;
 use Minishlink\WebPush\Subscription;
 use Minishlink\WebPush\WebPush;
@@ -9,17 +10,70 @@ use Illuminate\Support\Facades\Log;
 
 class PanelPushService
 {
+    /**
+     * Envia push para o tenant e persiste uma notificação por usuário (para o centro de notificações).
+     *
+     * @param  string  $type  Tipo para o centro de notificações: sale_approved, pix_generated, boleto_generated, etc.
+     * @param  string|null  $eventKey  Chave única do evento (ex: order_123). Quando informada, evita duplicar notificação para o mesmo evento.
+     */
+    public function sendAndPersistToTenant(?int $tenantId, string $type, string $title, string $body, ?string $url = null, ?string $eventKey = null): int
+    {
+        $subscriptions = PanelPushSubscription::where('tenant_id', $tenantId)->get();
+        $userIds = $subscriptions->pluck('user_id')->unique()->filter()->values();
+        $anyNewNotification = false;
+
+        foreach ($userIds as $userId) {
+            $attrs = [
+                'tenant_id' => $tenantId,
+                'user_id' => $userId,
+                'type' => $type,
+                'title' => $title,
+                'body' => $body,
+                'url' => $url,
+            ];
+            if ($eventKey !== null && $eventKey !== '') {
+                $notification = PanelNotification::firstOrCreate(
+                    [
+                        'user_id' => $userId,
+                        'event_key' => $eventKey,
+                    ],
+                    array_merge($attrs, ['event_key' => $eventKey])
+                );
+                if ($notification->wasRecentlyCreated) {
+                    $anyNewNotification = true;
+                }
+            } else {
+                PanelNotification::create($attrs);
+                $anyNewNotification = true;
+            }
+        }
+
+        if ($eventKey !== null && $eventKey !== '' && ! $anyNewNotification) {
+            return 0;
+        }
+
+        return $this->sendToTenant($tenantId, $title, $body, $url);
+    }
+
     public function sendToTenant(?int $tenantId, string $title, string $body, ?string $url = null): int
     {
         $vapidPublic = config('getfy.pwa.vapid_public');
         $vapidPrivate = config('getfy.pwa.vapid_private');
+        if (is_string($vapidPublic)) {
+            $vapidPublic = trim($vapidPublic, " \t\n\r\0\x0B\"'");
+        }
+        if (is_string($vapidPrivate)) {
+            $vapidPrivate = trim($vapidPrivate, " \t\n\r\0\x0B\"'");
+        }
 
         if (! $vapidPublic || ! $vapidPrivate) {
+            Log::warning('PanelPushService: VAPID não configurado (defina PWA_VAPID_PUBLIC e PWA_VAPID_PRIVATE no .env)', ['tenant_id' => $tenantId]);
             return 0;
         }
 
         $subscriptions = PanelPushSubscription::where('tenant_id', $tenantId)->get();
         if ($subscriptions->isEmpty()) {
+            Log::warning('PanelPushService: nenhuma inscrição push para o tenant (usuário deve permitir notificações no painel)', ['tenant_id' => $tenantId]);
             return 0;
         }
 
@@ -39,20 +93,25 @@ class PanelPushService
         ]);
 
         $sent = 0;
+        $invalidCount = 0;
+        $failedCount = 0;
+        $expiredCount = 0;
         try {
             $webPush = new WebPush($auth);
             foreach ($subscriptions as $sub) {
                 $keys = $sub->keys ?? [];
-                $authKey = $keys['auth'] ?? '';
-                $p256dh = $keys['p256dh'] ?? '';
-                if (! $sub->endpoint || ! $authKey || ! $p256dh) {
+                $authKey = trim((string) ($keys['auth'] ?? ''));
+                $p256dh = trim((string) ($keys['p256dh'] ?? ''));
+                if (! $sub->endpoint || $authKey === '' || $p256dh === '') {
+                    $invalidCount++;
+                    Log::warning('PanelPushService: subscription com keys inválidas', ['subscription_id' => $sub->id]);
                     continue;
                 }
                 $subscription = Subscription::create([
                     'endpoint' => $sub->endpoint,
                     'keys' => [
-                        'auth' => $authKey,
-                        'p256dh' => $p256dh,
+                        'auth' => $this->normalizeBase64KeyForPush($authKey),
+                        'p256dh' => $this->normalizeBase64KeyForPush($p256dh),
                     ],
                 ]);
                 try {
@@ -60,19 +119,60 @@ class PanelPushService
                     if ($report->isSuccess()) {
                         $sent++;
                     } elseif ($report->isSubscriptionExpired()) {
+                        $expiredCount++;
                         $sub->delete();
+                        Log::info('PanelPushService: subscription expirada removida', ['subscription_id' => $sub->id]);
+                    } else {
+                        $failedCount++;
+                        Log::warning('PanelPushService: envio falhou', [
+                            'subscription_id' => $sub->id,
+                            'reason' => $report->getReason(),
+                        ]);
                     }
                 } catch (\Throwable $e) {
+                    $failedCount++;
                     Log::warning('PanelPushService: falha ao enviar para subscription', [
                         'subscription_id' => $sub->id,
+                        'tenant_id' => $sub->tenant_id,
+                        'user_id' => $sub->user_id,
                         'message' => $e->getMessage(),
                     ]);
                 }
             }
+            if ($sent > 0) {
+                Log::info('PanelPushService: push enviado', ['tenant_id' => $tenantId, 'sent' => $sent]);
+            } else {
+                Log::warning('PanelPushService: nenhum push entregue para o tenant', [
+                    'tenant_id' => $tenantId,
+                    'total_subscriptions' => $subscriptions->count(),
+                    'invalid_subscriptions' => $invalidCount,
+                    'expired_subscriptions' => $expiredCount,
+                    'failed_subscriptions' => $failedCount,
+                ]);
+            }
         } catch (\Throwable $e) {
-            Log::error('PanelPushService: erro ao enviar push', ['message' => $e->getMessage()]);
+            Log::error('PanelPushService: erro ao enviar push', [
+                'message' => $e->getMessage(),
+                'tenant_id' => $tenantId,
+            ]);
         }
 
         return $sent;
+    }
+
+    /**
+     * Normaliza chave para o formato esperado pela minishlink/web-push (evita "Base64::decode() only expects characters in the correct base64 alphabet").
+     * Converte base64 padrão (+/) para base64url (-_) se a lib esperar base64url; senão mantém padrão.
+     */
+    private function normalizeBase64KeyForPush(string $key): string
+    {
+        $key = trim($key);
+        if ($key === '') {
+            return $key;
+        }
+        if (str_contains($key, '+') || str_contains($key, '/')) {
+            return strtr($key, ['+' => '-', '/' => '_']);
+        }
+        return $key;
     }
 }

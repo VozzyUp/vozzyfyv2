@@ -2,6 +2,9 @@
 
 namespace App\Http\Middleware;
 
+use App\Models\MemberNotification;
+use App\Models\MemberPushSubscription;
+use App\Models\PanelNotification;
 use App\Plugins\PluginRegistry;
 use App\Services\SalesAchievementsService;
 use App\Services\StorageService;
@@ -71,8 +74,34 @@ class HandleInertiaRequests extends Middleware
             $achievementsProgress = app(SalesAchievementsService::class)->getProgressForTenant($user->tenant_id);
         }
 
-        return [
+        $notificationsUnreadCount = 0;
+        if ($user && $user->canAccessPanel()) {
+            $notificationsUnreadCount = PanelNotification::forUser($user->id)->unread()->count();
+        }
+
+        $path = $request->path();
+        $isMemberArea = str_starts_with($path, 'm/') || $request->attributes->get('member_area_slug');
+        $isCheckout = str_starts_with($path, 'c/') || str_starts_with($path, 'checkout') || str_starts_with($path, 'api-checkout');
+        $skipPanelPwa = $isMemberArea || $isCheckout;
+
+        $memberNotificationsUnreadCount = 0;
+        $memberPushSubscribed = false;
+        if ($user && $isMemberArea) {
+            $product = $request->route('product') ?? $request->attributes->get('member_area_product');
+            if ($product) {
+                $memberNotificationsUnreadCount = MemberNotification::forUser($user->id)
+                    ->forProduct($product->id)
+                    ->unread()
+                    ->count();
+                $memberPushSubscribed = MemberPushSubscription::where('user_id', $user->id)
+                    ->where('product_id', $product->id)
+                    ->exists();
+            }
+        }
+
+        $shared = [
             ...parent::share($request),
+            'csrf_token' => $request->session()->token(),
             'app_url' => rtrim(config('app.url'), '/'),
             'pageTitle' => $pageTitle,
             'auth' => [
@@ -100,9 +129,17 @@ class HandleInertiaRequests extends Middleware
             'achievementsProgress' => $achievementsProgress,
             'push_enabled' => $pushEnabled,
             'vapid_public' => $pushEnabled ? $vapidPublic : null,
-            'pwa_manifest_url' => url('/manifest.json'),
-            'pwa_sw_url' => url('/painel-sw.js'),
+            'notifications_unread_count' => $notificationsUnreadCount,
+            'member_notifications_unread_count' => $memberNotificationsUnreadCount,
+            'member_push_subscribed' => $memberPushSubscribed,
         ];
+
+        if (! $skipPanelPwa) {
+            $shared['pwa_manifest_url'] = url('/manifest.json');
+            $shared['pwa_sw_url'] = url('/painel-sw.js');
+        }
+
+        return $shared;
     }
 
     private function pageTitleForRoute(?string $name): ?string

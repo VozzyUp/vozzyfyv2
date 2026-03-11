@@ -795,16 +795,30 @@ async function saveConfig() {
         }
         const payload = {
             member_area_config: cleanedConfig,
-            domain_type: configForm.domain_type ?? 'path',
-            domain_value: configForm.domain_value ?? '',
         };
-        const putRes = await axios.put(`${base.value}/config`, payload, { headers: headers() });
+        // Evita bloquear salvamento de outras abas por validação de domínio.
+        if (activeTab.value === 'pwa') {
+            payload.domain_type = configForm.domain_type ?? 'path';
+            payload.domain_value = configForm.domain_value ?? '';
+        }
+        // Rota POST explícita: em muitos ambientes _method em body JSON não é aplicado pelo Laravel.
+        const putRes = await axios.post(
+            `${base.value}/config`,
+            payload,
+            { headers: headers(), withCredentials: true }
+        );
+        const contentType = putRes?.headers?.['content-type'] ?? '';
+        if (contentType.includes('text/html')) {
+            alert('A resposta não foi JSON (possível redirecionamento). Verifique se está logado e tente novamente.');
+            return;
+        }
         if (putRes?.data?.warning) {
             alert(putRes.data.warning);
         }
-        // Recarrega para garantir que a lista e o estado vêm do servidor
+        // Recarrega com cache-bust para forçar HTML novo (evita ver dados antigos por cache do navegador)
         const url = new URL(window.location.href);
         url.searchParams.set('tab', activeTab.value);
+        url.searchParams.set('_', String(Date.now()));
         window.location.href = url.toString();
     } catch (err) {
         const msg = err?.response?.data?.message ?? err?.response?.data?.errors ?? err?.message ?? 'Erro ao salvar.';

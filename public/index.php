@@ -11,6 +11,31 @@ if ($uri === '/index.php' || $uri === '') {
     $_SERVER['REQUEST_URI'] = '/';
 }
 
+// Instalador: serve diretamente sem carregar Laravel (funciona sem .env)
+$uriPath = parse_url($uri, PHP_URL_PATH) ?: $uri;
+if (str_starts_with($uriPath, '/install')) {
+    $installDir = __DIR__ . '/install';
+    if (! is_dir($installDir)) {
+        $installDir = __DIR__ . '/.install';
+    }
+    if (is_dir($installDir)) {
+        if (str_ends_with(rtrim($uriPath, '/'), '/install/api') || preg_match('#/install/api\.php$#', $uriPath)) {
+            require $installDir . '/api.php';
+            exit;
+        }
+        if (preg_match('#/install/install\.js$#', $uriPath)) {
+            $file = $installDir . '/install.js';
+            if (file_exists($file)) {
+                header('Content-Type: application/javascript');
+                readfile($file);
+                exit;
+            }
+        }
+        require $installDir . '/index.php';
+        exit;
+    }
+}
+
 // Determine if the application is in maintenance mode...
 if (file_exists($maintenance = __DIR__.'/../storage/framework/maintenance.php')) {
     require $maintenance;

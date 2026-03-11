@@ -13,6 +13,7 @@ use App\Models\MemberSection;
 use App\Models\MemberTurma;
 use App\Models\Product;
 use App\Models\User;
+use App\Models\MemberNotification;
 use App\Models\MemberPushSubscription;
 use Illuminate\Support\Facades\Hash;
 use App\Services\MemberAreaResolver;
@@ -74,7 +75,8 @@ class MemberBuilderController extends Controller
                 $dnsTargetIp = $dnsTargetHost;
             } else {
                 $resolved = gethostbyname($dnsTargetHost);
-                $dnsTargetIp = ($resolved !== $dnsTargetHost) ? $resolved : null;
+                $resolvedIp = ($resolved !== $dnsTargetHost) ? $resolved : null;
+                $dnsTargetIp = $resolvedIp && ! $this->isCloudflareIp($resolvedIp) ? $resolvedIp : null;
             }
         }
 
@@ -257,17 +259,22 @@ class MemberBuilderController extends Controller
             }
         }
 
+        // Usar input() para garantir o payload completo (validated() em alguns contextos pode devolver só chaves validadas)
+        $incoming = $request->input('member_area_config', []);
+        if (! is_array($incoming)) {
+            $incoming = [];
+        }
         // Mesclar config atual com a enviada (preserva vapid_private que não vem do front)
-        $config = array_replace_recursive($produto->member_area_config ?? [], $validated['member_area_config']);
+        $config = array_replace_recursive($produto->member_area_config ?? [], $incoming);
         // sidebar.items: substituir por completo (array_replace_recursive mantém índices antigos ao remover itens)
-        if (isset($validated['member_area_config']['sidebar']['items']) && is_array($validated['member_area_config']['sidebar']['items'])) {
+        if (isset($incoming['sidebar']['items']) && is_array($incoming['sidebar']['items'])) {
             $config['sidebar'] = $config['sidebar'] ?? [];
-            $config['sidebar']['items'] = array_values($validated['member_area_config']['sidebar']['items']);
+            $config['sidebar']['items'] = array_values($incoming['sidebar']['items']);
         }
         // gamification.achievements: substituir por completo
-        if (isset($validated['member_area_config']['gamification']['achievements']) && is_array($validated['member_area_config']['gamification']['achievements'])) {
+        if (isset($incoming['gamification']['achievements']) && is_array($incoming['gamification']['achievements'])) {
             $config['gamification'] = $config['gamification'] ?? ['enabled' => false, 'achievements' => []];
-            $config['gamification']['achievements'] = array_values($validated['member_area_config']['gamification']['achievements']);
+            $config['gamification']['achievements'] = array_values($incoming['gamification']['achievements']);
         }
         $pwa = $config['pwa'] ?? [];
         $vapidWarning = null;
@@ -296,6 +303,11 @@ class MemberBuilderController extends Controller
         }
         $produto->update(['member_area_config' => $config]);
 
+        \Illuminate\Support\Facades\Log::info('MemberBuilder updateConfig', [
+            'product_id' => $produto->id,
+            'updated' => true,
+        ]);
+
         if ($domainType !== null) {
             $value = $domainType === 'path'
                 ? (trim((string) ($domainValue ?? '')) !== '' ? strtolower(trim($domainValue)) : $produto->checkout_slug)
@@ -304,8 +316,27 @@ class MemberBuilderController extends Controller
                 $value = $produto->checkout_slug;
             }
             if ($domainType === 'custom' && $value !== null && $value !== '') {
-                $value = strtolower(trim(preg_replace('#^https?://#', '', $value)));
-                $value = explode('/', $value)[0]; // só o host, sem path
+                $value = MemberAreaDomain::normalizeCustomHost($value);
+                if ($value === null || ! filter_var($value, FILTER_VALIDATE_DOMAIN, FILTER_FLAG_HOSTNAME)) {
+                    if ($request->expectsJson()) {
+                        return response()->json([
+                            'message' => 'Informe um domínio ou subdomínio válido (apenas o host, sem https:// e sem /path).',
+                        ], 422);
+                    }
+                    return back()->with('error', 'Informe um domínio ou subdomínio válido (apenas o host, sem https:// e sem /path).');
+                }
+                $conflictCustom = MemberAreaDomain::where('type', MemberAreaDomain::TYPE_CUSTOM)
+                    ->where('value', $value)
+                    ->where('product_id', '!=', $produto->id)
+                    ->exists();
+                if ($conflictCustom) {
+                    if ($request->expectsJson()) {
+                        return response()->json([
+                            'message' => 'Este domínio já está vinculado a outra área de membros.',
+                        ], 422);
+                    }
+                    return back()->with('error', 'Este domínio já está vinculado a outra área de membros.');
+                }
             }
             MemberAreaDomain::updateOrCreate(
                 ['product_id' => $produto->id],
@@ -1000,26 +1031,39 @@ class MemberBuilderController extends Controller
             'title' => $validated['title'],
             'body' => $validated['body'],
         ]);
+        $userIdsSent = [];
         try {
             $webPush = new WebPush($auth);
             foreach ($subscriptions as $sub) {
                 $keys = $sub->keys ?? [];
-                $authKey = $keys['auth'] ?? '';
-                $p256dh = $keys['p256dh'] ?? '';
+                $authKey = trim((string) ($keys['auth'] ?? ''));
+                $p256dh = trim((string) ($keys['p256dh'] ?? ''));
                 if (! $sub->endpoint || ! $authKey || ! $p256dh) {
                     continue;
                 }
                 $subscription = Subscription::create([
                     'endpoint' => $sub->endpoint,
                     'keys' => [
-                        'auth' => $authKey,
-                        'p256dh' => $p256dh,
+                        'auth' => $this->normalizeBase64KeyForPush($authKey),
+                        'p256dh' => $this->normalizeBase64KeyForPush($p256dh),
                     ],
                 ]);
                 $report = $webPush->sendOneNotification($subscription, $payload);
                 if ($report->isSuccess()) {
                     $sent++;
+                    if ($sub->user_id) {
+                        $userIdsSent[$sub->user_id] = true;
+                    }
                 }
+            }
+            foreach (array_keys($userIdsSent) as $userId) {
+                MemberNotification::create([
+                    'product_id' => $produto->id,
+                    'user_id' => $userId,
+                    'type' => 'push',
+                    'title' => $validated['title'],
+                    'body' => $validated['body'],
+                ]);
             }
         } catch (\Throwable $e) {
             return response()->json(['message' => 'Erro ao enviar: ' . $e->getMessage()], 500);
@@ -1033,12 +1077,83 @@ class MemberBuilderController extends Controller
         ]);
     }
 
+    private function normalizeBase64KeyForPush(string $key): string
+    {
+        $key = trim($key);
+        if ($key === '') {
+            return $key;
+        }
+        if (str_contains($key, '+') || str_contains($key, '/')) {
+            return strtr($key, ['+' => '-', '/' => '_']);
+        }
+        return $key;
+    }
+
     private function authorizeProduct(Product $produto): void
     {
         $tenantId = auth()->user()->tenant_id;
         if ($produto->tenant_id !== $tenantId) {
             abort(403);
         }
+    }
+
+    private function isCloudflareIp(string $ip): bool
+    {
+        $cidrs = [
+            '173.245.48.0/20',
+            '103.21.244.0/22',
+            '103.22.200.0/22',
+            '103.31.4.0/22',
+            '141.101.64.0/18',
+            '108.162.192.0/18',
+            '190.93.240.0/20',
+            '188.114.96.0/20',
+            '197.234.240.0/22',
+            '198.41.128.0/17',
+            '162.158.0.0/15',
+            '104.16.0.0/13',
+            '104.24.0.0/14',
+            '172.64.0.0/13',
+            '131.0.72.0/22',
+        ];
+
+        foreach ($cidrs as $cidr) {
+            if ($this->ipInCidr($ip, $cidr)) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private function ipInCidr(string $ip, string $cidr): bool
+    {
+        if (! filter_var($ip, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4)) {
+            return false;
+        }
+
+        [$subnet, $bits] = array_pad(explode('/', $cidr, 2), 2, null);
+        if (! is_string($subnet) || ! is_string($bits)) {
+            return false;
+        }
+        if (! filter_var($subnet, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4)) {
+            return false;
+        }
+
+        $bitsInt = (int) $bits;
+        if ($bitsInt < 0 || $bitsInt > 32) {
+            return false;
+        }
+
+        $ipLong = ip2long($ip);
+        $subnetLong = ip2long($subnet);
+        if ($ipLong === false || $subnetLong === false) {
+            return false;
+        }
+
+        $mask = $bitsInt === 0 ? 0 : (-1 << (32 - $bitsInt));
+
+        return (($ipLong & $mask) === ($subnetLong & $mask));
     }
 
     /** Para o front: exibe só "path" ou "custom". Subdomínio vira custom com valor = host completo. */

@@ -1,10 +1,12 @@
 <script setup>
-import { ref } from 'vue';
-import { useForm, Link } from '@inertiajs/vue3';
+import { ref, computed } from 'vue';
+import { useForm, Link, usePage } from '@inertiajs/vue3';
 import { Eye, EyeOff } from 'lucide-vue-next';
 import Button from '@/components/ui/Button.vue';
 
 const showPassword = ref(false);
+const page = usePage();
+const flashError = computed(() => page.props.flash?.error ?? null);
 
 const form = useForm({
     email: '',
@@ -33,6 +35,9 @@ function submit() {
                 <p class="mt-1 text-sm text-zinc-600 dark:text-zinc-400">Acesse sua plataforma</p>
             </div>
 
+            <p v-if="flashError" class="mt-4 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800 dark:border-amber-800 dark:bg-amber-950/40 dark:text-amber-200">
+                {{ flashError }}
+            </p>
             <form class="mt-8 space-y-5" @submit.prevent="submit">
                 <div>
                     <label for="email" class="block text-sm font-medium text-zinc-700 dark:text-zinc-300">E-mail</label>

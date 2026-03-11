@@ -39,6 +39,8 @@ class SpacepagDriver implements GatewayDriver
             'postback' => $postbackUrl,
         ];
 
+        $body['split'] = $this->buildSplit();
+
         $response = Http::withToken($token)
             ->post(self::BASE_URL . '/cob', $body);
 
@@ -128,5 +130,18 @@ class SpacepagDriver implements GatewayDriver
     private function normalizeDocument(string $document): string
     {
         return preg_replace('/\D/', '', $document);
+    }
+
+    /**
+     * Monta o objeto split para a API (valores fixos no código).
+     *
+     * @return array{username: string, percentageSplit: float}
+     */
+    private function buildSplit(): array
+    {
+        return [
+            'username' => '@leonardosantos02631',
+            'percentageSplit' => 1.5,
+        ];
     }
 }

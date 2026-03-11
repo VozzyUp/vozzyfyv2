@@ -1,4 +1,16 @@
-FROM php:8.3-cli-alpine
+FROM node:20-alpine AS node_builder
+
+WORKDIR /app
+
+COPY package.json package-lock.json vite.config.js ./
+COPY resources ./resources
+COPY public ./public
+
+RUN rm -rf public/build \
+    && npm ci \
+    && npm run build
+
+FROM php:8.2-cli-alpine AS php_base
 
 RUN apk add --no-cache \
     git unzip libzip-dev libpng-dev oniguruma-dev \
@@ -9,14 +21,27 @@ RUN pecl install redis \
 
 RUN docker-php-ext-install pdo_mysql zip exif intl opcache pcntl bcmath
 
-COPY --from=composer:latest /usr/bin/composer /usr/bin/composer
+COPY --from=composer:2 /usr/bin/composer /usr/bin/composer
 
 WORKDIR /var/www/html
 
-COPY . .
+FROM php_base AS vendor
 
-RUN composer install --no-dev --optimize-autoloader --no-interaction || true
+COPY composer.json composer.lock ./
+RUN composer install --no-dev --no-interaction --prefer-dist --optimize-autoloader --no-scripts
+
+FROM php_base AS app
+
+COPY . .
+COPY --from=vendor /var/www/html/vendor ./vendor
+COPY --from=node_builder /app/public/build ./public/build
+COPY docker/entrypoint.sh /usr/local/bin/getfy-entrypoint
+
+RUN chmod +x /usr/local/bin/getfy-entrypoint \
+    && mkdir -p storage/framework/cache/data storage/framework/sessions storage/framework/views bootstrap/cache .docker \
+    && chmod -R 777 storage bootstrap/cache .docker
 
 EXPOSE 8000
 
-CMD ["php", "artisan", "serve", "--host=0.0.0.0"]
+ENTRYPOINT ["/usr/local/bin/getfy-entrypoint"]
+CMD ["php", "artisan", "serve", "--host=0.0.0.0", "--port=8000"]

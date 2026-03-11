@@ -42,7 +42,7 @@ return new class extends Migration
         $driver = Schema::getConnection()->getDriverName();
 
         if ($driver !== 'mysql' && $driver !== 'mariadb') {
-            throw new \RuntimeException('Migration change_products_id_to_uuid supports only MySQL/MariaDB. Use MySQL for this migration.');
+            return;
         }
 
         DB::transaction(function () {

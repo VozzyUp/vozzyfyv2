@@ -37,11 +37,7 @@ class EfiWebhookController extends Controller
         $event = 'order.paid';
         $status = 'paid';
 
-        if (app()->environment('local')) {
-            ProcessPaymentWebhook::dispatchSync('efi', $txid, $event, $status, $request->all());
-        } else {
-            ProcessPaymentWebhook::dispatch('efi', $txid, $event, $status, $request->all());
-        }
+        ProcessPaymentWebhook::dispatchSync('efi', $txid, $event, $status, $request->all());
 
         return response()->json(['received' => true]);
     }
@@ -120,11 +116,7 @@ class EfiWebhookController extends Controller
         if ($chargeId !== null && is_string($statusCurrent) && strtolower($statusCurrent) === 'paid') {
             $order = Order::where('gateway', 'efi')->where('gateway_id', (string) $chargeId)->first();
             if ($order) {
-                if (app()->environment('local')) {
-                    ProcessPaymentWebhook::dispatchSync('efi', (string) $chargeId, 'order.paid', 'paid', $request->all());
-                } else {
-                    ProcessPaymentWebhook::dispatch('efi', (string) $chargeId, 'order.paid', 'paid', $request->all());
-                }
+                ProcessPaymentWebhook::dispatchSync('efi', (string) $chargeId, 'order.paid', 'paid', $request->all());
             }
         }
 
@@ -160,11 +152,7 @@ class EfiWebhookController extends Controller
         $statusNorm = is_string($status) ? strtoupper($status) : '';
 
         if (in_array($statusNorm, ['CONCLUIDA', 'LIQUIDADA', 'PAID', 'PAGO'], true)) {
-            if (app()->environment('local')) {
-                ProcessPaymentWebhook::dispatchSync('efi', $txid, 'order.paid', 'paid', $request->all());
-            } else {
-                ProcessPaymentWebhook::dispatch('efi', $txid, 'order.paid', 'paid', $request->all());
-            }
+            ProcessPaymentWebhook::dispatchSync('efi', $txid, 'order.paid', 'paid', $request->all());
         }
 
         return response()->json(['received' => true]);

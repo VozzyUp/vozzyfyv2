@@ -4,50 +4,140 @@ services:
       context: .
       dockerfile: Dockerfile
     image: getfy_app:latest
+    restart: unless-stopped
     ports:
       - "8000:8000"
     volumes:
-      - ./:/var/www/html
-    env_file:
-      - .env.docker
+      - getfy_storage:/var/www/html/storage
+      - getfy_env:/var/www/html/.docker
+    environment:
+      APP_ENV: ${APP_ENV:-local}
+      APP_DEBUG: ${APP_DEBUG:-true}
+      APP_URL: ${APP_URL:-http://localhost:8000}
+      APP_INSTALLED: ${APP_INSTALLED:-true}
+      APP_AUTO_MIGRATE: ${APP_AUTO_MIGRATE:-false}
+      DB_CONNECTION: ${DB_CONNECTION:-mysql}
+      DB_HOST: ${DB_HOST:-mysql}
+      DB_PORT: ${DB_PORT:-3306}
+      DB_DATABASE: ${DB_DATABASE:-getfy}
+      DB_USERNAME: ${DB_USERNAME:-getfy}
+      DB_PASSWORD: ${DB_PASSWORD:-getfy}
+      REDIS_HOST: ${REDIS_HOST:-redis}
+      REDIS_PORT: ${REDIS_PORT:-6379}
+      CACHE_STORE: ${CACHE_STORE:-redis}
+      QUEUE_CONNECTION: ${QUEUE_CONNECTION:-redis}
+      SESSION_DRIVER: ${SESSION_DRIVER:-file}
+      GETFY_DOCKER: "true"
+      GETFY_RUN_SETUP: "true"
     depends_on:
-      - mysql
-      - redis
-    command: ["php", "artisan", "serve", "--host=0.0.0.0"]
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
 
   mysql:
     image: mysql:8.0
     restart: unless-stopped
     environment:
-      MYSQL_ROOT_PASSWORD: root
-      MYSQL_DATABASE: infoprodutor
-      MYSQL_USER: infoprodutor
-      MYSQL_PASSWORD: secret
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-root}
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-${DB_DATABASE:-getfy}}
+      MYSQL_USER: ${MYSQL_USER:-${DB_USERNAME:-getfy}}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:-${DB_PASSWORD:-getfy}}
     ports:
       - "3307:3306"
     volumes:
       - mysql_data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD-SHELL", "mysqladmin ping -h 127.0.0.1 -u$$MYSQL_USER -p$$MYSQL_PASSWORD --silent"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
 
   redis:
     image: redis:7-alpine
     restart: unless-stopped
     ports:
       - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
 
   queue:
     build:
       context: .
       dockerfile: Dockerfile
     image: getfy_app:latest
+    restart: unless-stopped
     command: ["php", "artisan", "queue:work", "--sleep=3", "--tries=3", "--timeout=0"]
     volumes:
-      - ./:/var/www/html
-    env_file:
-      - .env.docker
+      - getfy_storage:/var/www/html/storage
+      - getfy_env:/var/www/html/.docker
+    environment:
+      APP_ENV: ${APP_ENV:-local}
+      APP_DEBUG: ${APP_DEBUG:-true}
+      APP_URL: ${APP_URL:-http://localhost:8000}
+      APP_INSTALLED: ${APP_INSTALLED:-true}
+      APP_AUTO_MIGRATE: ${APP_AUTO_MIGRATE:-false}
+      DB_CONNECTION: ${DB_CONNECTION:-mysql}
+      DB_HOST: ${DB_HOST:-mysql}
+      DB_PORT: ${DB_PORT:-3306}
+      DB_DATABASE: ${DB_DATABASE:-getfy}
+      DB_USERNAME: ${DB_USERNAME:-getfy}
+      DB_PASSWORD: ${DB_PASSWORD:-getfy}
+      REDIS_HOST: ${REDIS_HOST:-redis}
+      REDIS_PORT: ${REDIS_PORT:-6379}
+      CACHE_STORE: ${CACHE_STORE:-redis}
+      QUEUE_CONNECTION: ${QUEUE_CONNECTION:-redis}
+      SESSION_DRIVER: ${SESSION_DRIVER:-file}
+      GETFY_DOCKER: "true"
+      GETFY_RUN_SETUP: "false"
     depends_on:
-      - mysql
-      - redis
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  scheduler:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: getfy_app:latest
+    restart: unless-stopped
+    command: ["php", "artisan", "schedule:work"]
+    volumes:
+      - getfy_storage:/var/www/html/storage
+      - getfy_env:/var/www/html/.docker
+    environment:
+      APP_ENV: ${APP_ENV:-local}
+      APP_DEBUG: ${APP_DEBUG:-true}
+      APP_URL: ${APP_URL:-http://localhost:8000}
+      APP_INSTALLED: ${APP_INSTALLED:-true}
+      APP_AUTO_MIGRATE: ${APP_AUTO_MIGRATE:-false}
+      DB_CONNECTION: ${DB_CONNECTION:-mysql}
+      DB_HOST: ${DB_HOST:-mysql}
+      DB_PORT: ${DB_PORT:-3306}
+      DB_DATABASE: ${DB_DATABASE:-getfy}
+      DB_USERNAME: ${DB_USERNAME:-getfy}
+      DB_PASSWORD: ${DB_PASSWORD:-getfy}
+      REDIS_HOST: ${REDIS_HOST:-redis}
+      REDIS_PORT: ${REDIS_PORT:-6379}
+      CACHE_STORE: ${CACHE_STORE:-redis}
+      QUEUE_CONNECTION: ${QUEUE_CONNECTION:-redis}
+      SESSION_DRIVER: ${SESSION_DRIVER:-file}
+      GETFY_DOCKER: "true"
+      GETFY_RUN_SETUP: "false"
+    depends_on:
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
 
 volumes:
   mysql_data:
+    driver: local
+  getfy_storage:
+    driver: local
+  getfy_env:
     driver: local

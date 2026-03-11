@@ -4,12 +4,15 @@ use App\Http\Controllers\Auth\ForgotPasswordController;
 use App\Http\Controllers\Auth\LoginController;
 use App\Http\Controllers\Auth\ResetPasswordController;
 use Illuminate\Support\Facades\Route;
-use Inertia\Inertia;
 
 // Storage: servir arquivos de storage/app/public (sem symlink) — deve ser uma das primeiras rotas
 Route::get('/storage/{path}', \App\Http\Controllers\StorageServeController::class)
     ->where('path', '.+')
     ->name('storage.serve');
+
+// Instalador: fallback quando o servidor envia /install para o Laravel (ex: document root diferente de public/)
+Route::any('/install', [\App\Http\Controllers\InstallServeController::class, '__invoke'])->defaults('path', null);
+Route::any('/install/{path}', [\App\Http\Controllers\InstallServeController::class, '__invoke'])->where('path', '.+');
 
 // Favicon: evita 404 no console quando o navegador solicita /favicon.ico
 Route::get('/favicon.ico', function () {
@@ -23,17 +26,41 @@ Route::get('/painel-sw.js', function () {
     if (! file_exists($path)) {
         abort(404);
     }
+
     return response()->file($path, ['Content-Type' => 'application/javascript']);
 })->name('panel.pwa.sw');
 
-Route::get('/', function () {
+Route::get('/', function (\Illuminate\Http\Request $request) {
+    $resolved = app(\App\Services\MemberAreaResolver::class)->resolve($request);
+    if ($resolved && in_array($resolved['access_type'], ['subdomain', 'custom'], true)) {
+        $request->attributes->set('member_area_product', $resolved['product']);
+        $request->attributes->set('member_area_access_type', $resolved['access_type']);
+        $request->attributes->set('member_area_slug', $resolved['slug']);
+
+        if (! $request->user()) {
+            return redirect()->to('/login')->with('error', 'Faça login para acessar a área de membros.');
+        }
+
+        if (! $resolved['product']->hasMemberAreaAccess($request->user())) {
+            return redirect()->route('checkout.show', ['slug' => $resolved['product']->checkout_slug])
+                ->with('error', 'Você não tem acesso a esta área. Adquira o produto para continuar.');
+        }
+
+        return app()->call(\App\Http\Controllers\MemberAreaAppController::class.'@show', [
+            'request' => $request,
+            'slug' => $resolved['slug'],
+        ]);
+    }
+
     if (auth()->check()) {
         $user = auth()->user();
         if ($user->canAccessPanel()) {
             return redirect('/dashboard');
         }
+
         return redirect('/area-membros');
     }
+
     return redirect()->to('/login', 302);
 });
 
@@ -44,6 +71,7 @@ Route::get('/cron', function () {
         abort(404);
     }
     \Illuminate\Support\Facades\Artisan::call('schedule:run');
+
     return response()->json(['ok' => true, 'message' => 'Schedule executed']);
 })->middleware('throttle:60,1')->name('cron.url');
 
@@ -97,6 +125,8 @@ Route::get('/conquistas/{slug}/share', [\App\Http\Controllers\ConquistasControll
     ->where('slug', '[a-z0-9-]+');
 
 Route::middleware('guest')->group(function () {
+    Route::get('/criar-admin', [\App\Http\Controllers\CreateFirstAdminController::class, 'show'])->name('criar-admin');
+    Route::post('/criar-admin', [\App\Http\Controllers\CreateFirstAdminController::class, 'store'])->middleware('throttle:5,1');
     Route::get('/login', [LoginController::class, 'showLoginForm'])->name('login');
     Route::post('/login', [LoginController::class, 'login'])->middleware('throttle:5,1');
     Route::get('/esqueci-senha', [ForgotPasswordController::class, 'showLinkRequestForm'])->name('password.request');
@@ -120,6 +150,11 @@ Route::middleware(['auth', 'role:admin'])->prefix('usuarios')->name('usuarios.')
 
 Route::middleware(['auth', 'role:admin|infoprodutor'])->group(function () {
     Route::post('/painel/push-subscribe', [\App\Http\Controllers\PanelPwaController::class, 'pushSubscribe'])->name('panel.pwa.push-subscribe')->middleware('throttle:10,1');
+    Route::get('/painel/notifications', [\App\Http\Controllers\PanelNotificationsController::class, 'index'])->name('panel.notifications.index');
+    Route::patch('/painel/notifications/{notification}/read', [\App\Http\Controllers\PanelNotificationsController::class, 'markRead'])->name('panel.notifications.mark-read');
+    Route::post('/painel/notifications/mark-read', [\App\Http\Controllers\PanelNotificationsController::class, 'markReadBatch'])->name('panel.notifications.mark-read-batch');
+    Route::post('/painel/notifications/mark-all-read', [\App\Http\Controllers\PanelNotificationsController::class, 'markAllRead'])->name('panel.notifications.mark-all-read');
+    Route::delete('/painel/notifications', [\App\Http\Controllers\PanelNotificationsController::class, 'clearAll'])->name('panel.notifications.clear-all');
     Route::get('/conquistas', [\App\Http\Controllers\ConquistasController::class, 'index'])->name('conquistas.index');
     Route::get('/meu-perfil', [\App\Http\Controllers\ProfileController::class, 'index'])->name('profile.index');
     Route::post('/meu-perfil', [\App\Http\Controllers\ProfileController::class, 'update'])->name('profile.update');
@@ -244,6 +279,8 @@ Route::middleware(['auth', 'role:admin|infoprodutor'])->group(function () {
     // Member Builder (área de membros do produto)
     Route::get('/produtos/{produto}/member-builder', [\App\Http\Controllers\MemberBuilderController::class, 'index'])->name('member-builder.index');
     Route::put('/produtos/{produto}/member-builder/config', [\App\Http\Controllers\MemberBuilderController::class, 'updateConfig'])->name('member-builder.config.update');
+    // POST aceito para config: frontend envia JSON e em muitos ambientes _method não é aplicado a body JSON
+    Route::post('/produtos/{produto}/member-builder/config', [\App\Http\Controllers\MemberBuilderController::class, 'updateConfig'])->name('member-builder.config.update.post');
     Route::post('/produtos/{produto}/member-builder/upload', [\App\Http\Controllers\MemberBuilderController::class, 'uploadImage'])->name('member-builder.upload');
     Route::post('/produtos/{produto}/member-builder/upload-pdf', [\App\Http\Controllers\MemberBuilderController::class, 'uploadPdf'])->name('member-builder.upload-pdf');
     Route::post('/produtos/{produto}/member-builder/upload-badge', [\App\Http\Controllers\MemberBuilderController::class, 'uploadBadge'])->name('member-builder.upload-badge');
@@ -281,9 +318,10 @@ Route::prefix('m/{slug}')->where(['slug' => '[a-zA-Z0-9]{6,16}'])->middleware('m
     Route::get('manifest.json', [\App\Http\Controllers\MemberAreaAppController::class, 'manifest'])->name('member-area-app.manifest');
     Route::get('sw.js', function () {
         $path = public_path('member-area-sw.js');
-        if (!file_exists($path)) {
+        if (! file_exists($path)) {
             abort(404);
         }
+
         return response()->file($path, ['Content-Type' => 'application/javascript']);
     })->name('member-area-app.sw');
     Route::get('login', [\App\Http\Controllers\MemberAreaLoginController::class, 'showLoginForm'])->name('member-area.login')->middleware('guest');
@@ -309,6 +347,10 @@ Route::prefix('m/{slug}')->where(['slug' => '[a-zA-Z0-9]{6,16}'])->middleware('m
         Route::post('comunidade/{pageSlug}/posts/{post}/comments', [\App\Http\Controllers\MemberAreaAppController::class, 'storeCommunityPostComment'])->name('member-area-app.comunidade.posts.comments.store');
         Route::get('certificado', [\App\Http\Controllers\MemberAreaAppController::class, 'certificado'])->name('member-area-app.certificado');
         Route::post('push-subscribe', [\App\Http\Controllers\MemberAreaAppController::class, 'pushSubscribe'])->name('member-area-app.push.subscribe');
+        Route::get('notifications', [\App\Http\Controllers\MemberAreaNotificationsController::class, 'index'])->name('member-area-app.notifications.index');
+        Route::patch('notifications/{notification}/read', [\App\Http\Controllers\MemberAreaNotificationsController::class, 'markRead'])->name('member-area-app.notifications.mark-read');
+        Route::post('notifications/mark-all-read', [\App\Http\Controllers\MemberAreaNotificationsController::class, 'markAllRead'])->name('member-area-app.notifications.mark-all-read');
+        Route::delete('notifications', [\App\Http\Controllers\MemberAreaNotificationsController::class, 'clearAll'])->name('member-area-app.notifications.clear-all');
         Route::put('conta', [\App\Http\Controllers\MemberAreaAccountController::class, 'updateProfile'])->name('member-area-app.conta.update');
         Route::put('conta/senha', [\App\Http\Controllers\MemberAreaAccountController::class, 'updatePassword'])->name('member-area-app.conta.password');
     });
@@ -316,17 +358,12 @@ Route::prefix('m/{slug}')->where(['slug' => '[a-zA-Z0-9]{6,16}'])->middleware('m
 
 // PWA e login da área de membros quando acessada por subdomínio ou domínio próprio (sem prefixo /m/slug)
 Route::middleware(['web', 'member.area.resolve.by.host'])->group(function () {
-    Route::get('manifest.json', function (\Illuminate\Http\Request $request) {
-        return app()->call([\App\Http\Controllers\MemberAreaAppController::class, 'manifest'], [
-            'request' => $request,
-            'slug' => $request->attributes->get('member_area_slug'),
-        ]);
-    })->name('member-area-app.manifest.host');
     Route::get('sw.js', function () {
         $path = public_path('member-area-sw.js');
         if (! file_exists($path)) {
             abort(404);
         }
+
         return response()->file($path, ['Content-Type' => 'application/javascript']);
     })->name('member-area-app.sw.host');
     // Login da área de membros por host: não registramos GET/POST /login aqui para não sobrescrever
@@ -337,14 +374,14 @@ Route::middleware(['web', 'member.area.resolve.by.host'])->group(function () {
         if (! $slug) {
             abort(404);
         }
-        return app()->call([\App\Http\Controllers\MemberAreaLoginController::class, 'loginWithoutPassword'], [
+
+        return app()->call(\App\Http\Controllers\MemberAreaLoginController::class.'@loginWithoutPassword', [
             'request' => $request,
             'slug' => $slug,
         ]);
     })->name('member-area.login.without-password.host')->middleware(['guest', 'throttle:5,1']);
 
     Route::middleware(['member.area.access'])->group(function () {
-        Route::get('/', [\App\Http\Controllers\MemberAreaAppController::class, 'show'])->name('member-area-app.show.host');
         Route::get('modulos', [\App\Http\Controllers\MemberAreaAppController::class, 'modulos'])->name('member-area-app.modulos.host');
         Route::get('modulo/{module}', [\App\Http\Controllers\MemberAreaAppController::class, 'moduleContent'])->name('member-area-app.module.host');
         Route::get('aula/{lesson}', [\App\Http\Controllers\MemberAreaAppController::class, 'lesson'])->name('member-area-app.lesson.host');
@@ -360,6 +397,10 @@ Route::middleware(['web', 'member.area.resolve.by.host'])->group(function () {
         Route::post('comunidade/{pageSlug}/posts/{post}/comments', [\App\Http\Controllers\MemberAreaAppController::class, 'storeCommunityPostComment'])->name('member-area-app.comunidade.posts.comments.store.host');
         Route::get('certificado', [\App\Http\Controllers\MemberAreaAppController::class, 'certificado'])->name('member-area-app.certificado.host');
         Route::post('push-subscribe', [\App\Http\Controllers\MemberAreaAppController::class, 'pushSubscribe'])->name('member-area-app.push.subscribe.host');
+        Route::get('notifications', [\App\Http\Controllers\MemberAreaNotificationsController::class, 'index'])->name('member-area-app.notifications.index.host');
+        Route::patch('notifications/{notification}/read', [\App\Http\Controllers\MemberAreaNotificationsController::class, 'markRead'])->name('member-area-app.notifications.mark-read.host');
+        Route::post('notifications/mark-all-read', [\App\Http\Controllers\MemberAreaNotificationsController::class, 'markAllRead'])->name('member-area-app.notifications.mark-all-read.host');
+        Route::delete('notifications', [\App\Http\Controllers\MemberAreaNotificationsController::class, 'clearAll'])->name('member-area-app.notifications.clear-all.host');
         Route::put('conta', [\App\Http\Controllers\MemberAreaAccountController::class, 'updateProfile'])->name('member-area-app.conta.update.host');
         Route::put('conta/senha', [\App\Http\Controllers\MemberAreaAccountController::class, 'updatePassword'])->name('member-area-app.conta.password.host');
     });

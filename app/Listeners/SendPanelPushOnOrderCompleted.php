@@ -19,15 +19,17 @@ class SendPanelPushOnOrderCompleted
         try {
             $productName = $order->product?->name ?? 'Produto';
             $amount = number_format((float) $order->amount, 2, ',', '.');
-            $title = 'Nova venda!';
+            $title = 'Venda aprovada!';
             $body = "{$productName} - R$ {$amount}";
             $url = url('/vendas?order=' . $order->id);
 
-            $this->panelPushService->sendToTenant(
+            $this->panelPushService->sendAndPersistToTenant(
                 $order->tenant_id,
+                'sale_approved',
                 $title,
                 $body,
-                $url
+                $url,
+                'sale_' . $order->id
             );
         } catch (\Throwable $e) {
             Log::warning('SendPanelPushOnOrderCompleted: falha ao enviar push', [

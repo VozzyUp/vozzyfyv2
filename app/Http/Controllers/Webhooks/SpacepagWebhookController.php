@@ -30,11 +30,7 @@ class SpacepagWebhookController extends Controller
             return response()->json(['message' => 'Unauthorized'], 401);
         }
 
-        if (app()->environment('local')) {
-            ProcessPaymentWebhook::dispatchSync('spacepag', $transactionId, (string) $event, (string) $status, $request->all());
-        } else {
-            ProcessPaymentWebhook::dispatch('spacepag', $transactionId, (string) $event, (string) $status, $request->all());
-        }
+        ProcessPaymentWebhook::dispatchSync('spacepag', $transactionId, (string) $event, (string) $status, $request->all());
 
         return response()->json(['received' => true]);
     }

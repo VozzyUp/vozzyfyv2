@@ -23,11 +23,13 @@ class SendPanelPushOnPixGenerated
             $body = "{$productName} - R$ {$amount} - Aguardando pagamento";
             $url = url('/vendas');
 
-            $this->panelPushService->sendToTenant(
+            $this->panelPushService->sendAndPersistToTenant(
                 $order->tenant_id,
+                'pix_generated',
                 $title,
                 $body,
-                $url
+                $url,
+                'pix_' . $order->id
             );
         } catch (\Throwable $e) {
             Log::warning('SendPanelPushOnPixGenerated: falha ao enviar push', [

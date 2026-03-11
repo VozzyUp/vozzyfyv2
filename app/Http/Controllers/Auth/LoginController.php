@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Auth;
 
 use App\Http\Controllers\Controller;
+use App\Models\User;
 use App\Services\MemberAreaResolver;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -18,16 +19,22 @@ class LoginController extends Controller
      */
     public function showLoginForm(Request $request): Response|RedirectResponse
     {
+        if (User::count() === 0) {
+            return redirect()->route('criar-admin');
+        }
+
         $resolved = app(MemberAreaResolver::class)->resolve($request);
         if ($resolved && in_array($resolved['access_type'], ['subdomain', 'custom'], true)) {
             $request->attributes->set('member_area_product', $resolved['product']);
             $request->attributes->set('member_area_access_type', $resolved['access_type']);
             $request->attributes->set('member_area_slug', $resolved['slug']);
-            return app()->call([\App\Http\Controllers\MemberAreaLoginController::class, 'showLoginForm'], [
+
+            return app()->call(\App\Http\Controllers\MemberAreaLoginController::class.'@showLoginForm', [
                 'request' => $request,
                 'slug' => $resolved['slug'],
             ]);
         }
+
         return Inertia::render('Auth/Login');
     }
 
@@ -38,7 +45,8 @@ class LoginController extends Controller
             $request->attributes->set('member_area_product', $resolved['product']);
             $request->attributes->set('member_area_access_type', $resolved['access_type']);
             $request->attributes->set('member_area_slug', $resolved['slug']);
-            return app()->call([\App\Http\Controllers\MemberAreaLoginController::class, 'login'], [
+
+            return app()->call(\App\Http\Controllers\MemberAreaLoginController::class.'@login', [
                 'request' => $request,
                 'slug' => $resolved['slug'],
             ]);
@@ -55,6 +63,7 @@ class LoginController extends Controller
             if ($user->canAccessPanel()) {
                 return redirect()->intended('/dashboard');
             }
+
             return redirect()->intended('/area-membros');
         }
 
@@ -68,6 +77,7 @@ class LoginController extends Controller
         Auth::logout();
         $request->session()->invalidate();
         $request->session()->regenerateToken();
+
         return redirect('/');
     }
 }

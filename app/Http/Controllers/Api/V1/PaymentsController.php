@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Api\V1;
 
 use App\Http\Controllers\Controller;
+use App\Events\BoletoGenerated;
 use App\Events\OrderCompleted;
 use App\Events\OrderPending;
 use App\Events\PixGenerated;
@@ -399,6 +400,13 @@ class PaymentsController extends Controller
         try {
             event(new OrderPending($order));
             $result = $paymentService->createBoletoPayment($order, $ctx['product'], $ctx['consumer'], $ctx['gateway_config']);
+            $boletoData = [
+                'amount' => $result['amount'] ?? $order->amount,
+                'expire_at' => $result['expire_at'] ?? null,
+                'barcode' => $result['barcode'] ?? null,
+                'pdf_url' => $result['pdf_url'] ?? null,
+            ];
+            event(new BoletoGenerated($order, $boletoData));
 
             return response()->json([
                 'order_id' => $order->id,

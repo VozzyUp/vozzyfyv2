@@ -32,9 +32,10 @@ return [
     |
     */
 
-    'lifetime' => (int) env('SESSION_LIFETIME', 120),
+    // Mínimo 120 minutos para evitar sessão expirar a cada request (0 ou vazio no .env quebraria)
+    'lifetime' => max(120, (int) env('SESSION_LIFETIME', 10080)), // 10080 = 7 dias; 43200 = 30 dias
 
-    'expire_on_close' => env('SESSION_EXPIRE_ON_CLOSE', false),
+    'expire_on_close' => filter_var(env('SESSION_EXPIRE_ON_CLOSE'), FILTER_VALIDATE_BOOLEAN) ?: false,
 
     /*
     |--------------------------------------------------------------------------
@@ -169,7 +170,8 @@ return [
     |
     */
 
-    'secure' => env('SESSION_SECURE_COOKIE'),
+    // true = Secure (HTTPS). Em produção com HTTPS use true. Se atrás de proxy e sessão cai, tente false e force HTTPS no proxy.
+    'secure' => env('SESSION_SECURE_COOKIE') === 'false' ? false : (filter_var(env('SESSION_SECURE_COOKIE'), FILTER_VALIDATE_BOOLEAN) ?: str_starts_with((string) env('APP_URL', 'http://'), 'https')),
 
     /*
     |--------------------------------------------------------------------------

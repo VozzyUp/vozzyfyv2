@@ -286,6 +286,10 @@ class PluginRegistry
 
     private static function tableExists(): bool
     {
-        return \Illuminate\Support\Facades\Schema::hasTable('plugins');
+        try {
+            return \Illuminate\Support\Facades\Schema::hasTable('plugins');
+        } catch (\Throwable) {
+            return false;
+        }
     }
 }

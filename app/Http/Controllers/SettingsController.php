@@ -29,15 +29,22 @@ class SettingsController extends Controller
             $currencies = config('products.currencies');
         }
 
-        $changelogPath = base_path('CHANGELOG.md');
-        $changelogLocal = is_file($changelogPath) ? file_get_contents($changelogPath) : null;
         $gitAvailable = is_dir(base_path('.git'));
+        $cloudMode = (bool) config('getfy.cloud_mode', false);
+        $dockerMode = is_file('/.dockerenv') || filter_var(env('GETFY_DOCKER', false), FILTER_VALIDATE_BOOLEAN);
+        $cronSecret = config('getfy.cron_secret');
+        $appUrl = rtrim(config('app.url'), '/');
+        $cronUrl = $cronSecret ? $appUrl . '/cron?token=' . urlencode((string) $cronSecret) : null;
 
         return Inertia::render('Settings/Index', [
             'current_version' => config('getfy.version'),
-            'changelog_local' => $changelogLocal,
             'updates_enabled' => config('getfy.updates_enabled', true),
             'git_available' => $gitAvailable,
+            'cloud_mode' => $cloudMode,
+            'docker_mode' => $dockerMode,
+            'app_url' => $appUrl,
+            'base_path' => base_path(),
+            'cron_url' => $cronUrl,
             'settings' => [
                 'email_provider' => Setting::get('email_provider', 'smtp', $tenantId),
                 'smtp_host' => Setting::get('smtp_host', '', $tenantId),

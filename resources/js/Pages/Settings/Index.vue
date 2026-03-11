@@ -3,7 +3,7 @@ import { ref, computed } from 'vue';
 import { useForm } from '@inertiajs/vue3';
 import LayoutInfoprodutor from '@/Layouts/LayoutInfoprodutor.vue';
 import Button from '@/components/ui/Button.vue';
-import { Mail, Languages, Banknote, HardDrive, AlertCircle, Trash2, RefreshCw, Upload, Download } from 'lucide-vue-next';
+import { Mail, Languages, Banknote, HardDrive, Clock, AlertCircle, Trash2, RefreshCw, Upload, Download } from 'lucide-vue-next';
 import IntegrationCard from '@/Components/IntegrationCard.vue';
 import EmailProviderSidebar from '@/Components/EmailProviderSidebar.vue';
 
@@ -18,10 +18,6 @@ const props = defineProps({
         type: String,
         default: '1.0.0',
     },
-    changelog_local: {
-        type: String,
-        default: null,
-    },
     updates_enabled: {
         type: Boolean,
         default: true,
@@ -30,9 +26,34 @@ const props = defineProps({
         type: Boolean,
         default: false,
     },
+    cloud_mode: {
+        type: Boolean,
+        default: false,
+    },
+    docker_mode: {
+        type: Boolean,
+        default: false,
+    },
+    app_url: {
+        type: String,
+        default: '',
+    },
+    base_path: {
+        type: String,
+        default: '',
+    },
+    cron_url: {
+        type: String,
+        default: null,
+    },
 });
 
-const activeTab = ref(typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('tab') === 'update' ? 'update' : 'email');
+const allowedTabs = ['email', 'storage', 'traducoes', 'moedas', 'cron', 'update'];
+const activeTab = ref('email');
+if (typeof window !== 'undefined') {
+    const t = new URLSearchParams(window.location.search).get('tab');
+    if (allowedTabs.includes(t)) activeTab.value = t;
+}
 
 const defaultTranslations = () => ({
     pt_BR: {},
@@ -86,6 +107,7 @@ const tabs = [
     { id: 'storage', label: 'Storage', icon: HardDrive },
     { id: 'traducoes', label: 'Traduções', icon: Languages },
     { id: 'moedas', label: 'Moedas', icon: Banknote },
+    { id: 'cron', label: 'Cron', icon: Clock },
     { id: 'update', label: 'Update', icon: Download },
 ];
 
@@ -486,6 +508,22 @@ function isProviderConfigured(providerId) {
     return false;
 }
 
+function copyToClipboard(text) {
+    try {
+        navigator.clipboard?.writeText(text);
+    } catch (_) {}
+}
+
+const cronLinuxLine = computed(() => {
+    const path = props.base_path && typeof props.base_path === 'string' ? props.base_path : '/caminho/do/projeto';
+    return `* * * * * cd ${path} && php artisan schedule:run >> /dev/null 2>&1`;
+});
+
+const cronCurlLine = computed(() => {
+    if (!props.cron_url) return '';
+    return `* * * * * curl -fsS "${props.cron_url}" > /dev/null 2>&1`;
+});
+
 const inputClass =
     'block w-full rounded-xl border-2 border-zinc-200 bg-white px-4 py-2.5 text-zinc-900 placeholder-zinc-400 transition focus:border-[var(--color-primary)] focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)]/20 dark:border-zinc-600 dark:bg-zinc-800 dark:text-white dark:placeholder-zinc-500';
 const selectClass =
@@ -525,7 +563,7 @@ const selectClass =
             </button>
         </nav>
 
-        <form v-show="activeTab !== 'update'" class="w-full max-w-full space-y-6" @submit.prevent="form.put('/configuracoes')">
+        <form v-show="activeTab !== 'update' && activeTab !== 'cron'" class="w-full max-w-full space-y-6" @submit.prevent="form.put('/configuracoes')">
             <!-- Aba E-MAIL -->
             <Transition
                 enter-active-class="transition duration-200 ease-out"
@@ -947,6 +985,100 @@ const selectClass =
             </div>
         </form>
 
+        <Transition
+            enter-active-class="transition duration-200 ease-out"
+            enter-from-class="opacity-0"
+            enter-to-class="opacity-100"
+            leave-active-class="transition duration-150 ease-in"
+            leave-from-class="opacity-100"
+            leave-to-class="opacity-0"
+        >
+            <div v-show="activeTab === 'cron'" class="w-full max-w-full space-y-6">
+                <section class="overflow-hidden rounded-xl border border-zinc-200 bg-white shadow-sm dark:border-zinc-700 dark:bg-zinc-800/50">
+                    <div class="border-b border-zinc-200 bg-zinc-50 px-6 py-5 dark:border-zinc-700 dark:bg-zinc-800">
+                        <h2 class="text-base font-semibold text-zinc-900 dark:text-white">Cron (agendador)</h2>
+                        <p class="mt-1 text-sm text-zinc-600 dark:text-zinc-400">
+                            Importante para o funcionamento geral da plataforma (envios em lote, tarefas automáticas, reconciliação de pagamentos, carrinho abandonado e outros).
+                        </p>
+                    </div>
+                    <div class="space-y-6 p-6">
+                        <div class="rounded-xl border border-zinc-200 bg-zinc-50 p-4 dark:border-zinc-700 dark:bg-zinc-900/40">
+                            <p class="text-sm font-medium text-zinc-900 dark:text-white">
+                                Aviso importante
+                            </p>
+                            <p class="mt-1 text-sm text-zinc-600 dark:text-zinc-400">
+                                Se você estiver usando o modo Cloud ou instalou via Docker, você não precisa configurar o cron manualmente. Só é necessário configurar em hospedagem compartilhada.
+                            </p>
+                        </div>
+                        <div
+                            v-if="cloud_mode || docker_mode"
+                            class="rounded-xl border border-emerald-200 bg-emerald-50 p-4 dark:border-emerald-800/50 dark:bg-emerald-950/30"
+                        >
+                            <p class="text-sm font-medium text-emerald-800 dark:text-emerald-200">
+                                Modo Cloud / Docker
+                            </p>
+                            <p class="mt-1 text-sm text-emerald-700 dark:text-emerald-300">
+                                Se você estiver usando o modo Cloud ou instalou via Docker, o agendador normalmente já fica configurado automaticamente. Só configure manualmente se estiver em hospedagem compartilhada.
+                            </p>
+                        </div>
+                        <div
+                            v-else
+                            class="rounded-xl border border-amber-200 bg-amber-50 p-4 dark:border-amber-800/50 dark:bg-amber-950/30"
+                        >
+                            <p class="text-sm font-medium text-amber-800 dark:text-amber-200">
+                                Hospedagem compartilhada
+                            </p>
+                            <p class="mt-1 text-sm text-amber-700 dark:text-amber-300">
+                                Se você instalou em hospedagem compartilhada, configure um cron job chamando o agendador a cada minuto para manter as rotinas automáticas funcionando.
+                            </p>
+                        </div>
+
+                        <div class="grid gap-4 lg:grid-cols-2">
+                            <div class="rounded-xl border border-zinc-200 bg-white p-5 dark:border-zinc-700 dark:bg-zinc-900/40">
+                                <h3 class="text-sm font-semibold uppercase tracking-wide text-zinc-500 dark:text-zinc-400">Cron por URL</h3>
+                                <p class="mt-2 text-sm text-zinc-600 dark:text-zinc-400">
+                                    Use em serviços externos (cron-job.org, EasyCron etc.) quando você não tem acesso a SSH/Terminal.
+                                </p>
+
+                                <template v-if="cron_url">
+                                    <div class="mt-4 flex flex-wrap items-center gap-2">
+                                        <code class="break-all rounded-lg bg-zinc-100 px-3 py-2 font-mono text-sm text-zinc-800 dark:bg-zinc-950/60 dark:text-zinc-200">
+                                            {{ cron_url }}
+                                        </code>
+                                        <button
+                                            type="button"
+                                            class="rounded-lg border border-zinc-300 bg-white px-3 py-1.5 text-sm font-medium text-zinc-700 hover:bg-zinc-50 dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-300 dark:hover:bg-zinc-700"
+                                            @click="copyToClipboard(cron_url)"
+                                        >
+                                            Copiar
+                                        </button>
+                                    </div>
+                                    <p class="mt-2 text-xs text-zinc-500 dark:text-zinc-400">
+                                        Configure a URL para ser chamada a cada minuto.
+                                    </p>
+                                </template>
+                                <p v-else class="mt-4 text-sm text-zinc-600 dark:text-zinc-400">
+                                    Para gerar a URL, defina <code class="rounded bg-zinc-200 px-1 dark:bg-zinc-700">CRON_SECRET</code> no arquivo .env.
+                                </p>
+                            </div>
+
+                            <div class="rounded-xl border border-zinc-200 bg-white p-5 dark:border-zinc-700 dark:bg-zinc-900/40">
+                                <h3 class="text-sm font-semibold uppercase tracking-wide text-zinc-500 dark:text-zinc-400">Cron no Linux (crontab)</h3>
+                                <p class="mt-2 text-sm text-zinc-600 dark:text-zinc-400">
+                                    Se você tem acesso ao servidor, adicione uma linha no <code class="rounded bg-zinc-200 px-1 dark:bg-zinc-700">crontab -e</code>.
+                                </p>
+                                <pre class="mt-3 overflow-x-auto rounded-lg bg-zinc-100 p-4 text-left font-mono text-sm text-zinc-800 dark:bg-zinc-950/60 dark:text-zinc-200">{{ cronLinuxLine }}</pre>
+                                <template v-if="cron_url">
+                                    <p class="mt-4 text-xs font-medium text-zinc-500 dark:text-zinc-400">Alternativa (chamando a URL):</p>
+                                    <pre class="mt-2 overflow-x-auto rounded-lg bg-zinc-100 p-4 text-left font-mono text-sm text-zinc-800 dark:bg-zinc-950/60 dark:text-zinc-200">{{ cronCurlLine }}</pre>
+                                </template>
+                            </div>
+                        </div>
+                    </div>
+                </section>
+            </div>
+        </Transition>
+
         <!-- Aba Update (fora do form) -->
         <Transition
             enter-active-class="transition duration-200 ease-out"
@@ -1023,20 +1155,6 @@ const selectClass =
                         <div v-if="!updates_enabled" class="rounded-xl border border-amber-200 bg-amber-50 p-4 dark:border-amber-800/50 dark:bg-amber-900/20">
                             <p class="text-sm text-amber-800 dark:text-amber-200">Atualizações pela interface estão desativadas (GETFY_UPDATES_ENABLED).</p>
                         </div>
-                    </div>
-                </section>
-                <section
-                    v-if="changelog_local"
-                    class="overflow-hidden rounded-xl border border-zinc-200 bg-white shadow-sm dark:border-zinc-700 dark:bg-zinc-800/50"
-                >
-                    <div class="border-b border-zinc-200 bg-zinc-50 px-6 py-5 dark:border-zinc-700 dark:bg-zinc-800">
-                        <h2 class="text-base font-semibold text-zinc-900 dark:text-white">Changelog</h2>
-                        <p class="mt-1 text-sm text-zinc-600 dark:text-zinc-400">
-                            Histórico de alterações (CHANGELOG.md).
-                        </p>
-                    </div>
-                    <div class="max-h-[32rem] overflow-y-auto p-6">
-                        <pre class="whitespace-pre-wrap font-sans text-sm text-zinc-700 dark:text-zinc-300">{{ changelog_local }}</pre>
                     </div>
                 </section>
             </div>

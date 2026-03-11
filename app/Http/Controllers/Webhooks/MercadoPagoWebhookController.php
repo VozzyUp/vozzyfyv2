@@ -59,11 +59,7 @@ class MercadoPagoWebhookController extends Controller
             }
         }
 
-        if (app()->environment('local')) {
-            ProcessPaymentWebhook::dispatchSync('mercadopago', $transactionId, $event, $status, $payload);
-        } else {
-            ProcessPaymentWebhook::dispatch('mercadopago', $transactionId, $event, $status, $payload);
-        }
+        ProcessPaymentWebhook::dispatchSync('mercadopago', $transactionId, $event, $status, $payload);
 
         return response()->json(['received' => true]);
     }

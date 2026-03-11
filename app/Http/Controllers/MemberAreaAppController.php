@@ -15,11 +15,11 @@ use App\Models\MemberSection;
 use App\Models\Order;
 use App\Models\Product;
 use App\Models\User;
+use App\Services\GamificationService;
 use App\Services\MemberAreaResolver;
 use App\Services\MemberCommentService;
-use App\Services\StorageService;
 use App\Services\MemberProgressService;
-use App\Services\GamificationService;
+use App\Services\StorageService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -43,7 +43,7 @@ class MemberAreaAppController extends Controller
         $progressPercent = $this->progressService->completionPercent($product, $user);
         $continueWatching = $this->getContinueWatching($product, $user);
         $internalProducts = $product->memberInternalProducts()->with('relatedProduct')->orderBy('position')->get();
-        $baseUrl = $this->resolver->baseUrlForProduct($product);
+        $baseUrl = $this->baseUrlForRequest($product, $request);
         $userProductIds = $user->products()->pluck('products.id')->flip()->all();
         $push = $this->pushProps($product);
 
@@ -103,6 +103,7 @@ class MemberAreaAppController extends Controller
                     ])->values()->all(),
                 ])->values()->all(),
             ])->values()->all(),
+            'base_url' => $this->baseUrlForRequest($product, $request),
             'slug' => $slug,
             ...$this->pushProps($product),
         ] + $this->gamificationProps($product, $user));
@@ -195,6 +196,7 @@ class MemberAreaAppController extends Controller
         return Inertia::render('MemberAreaApp/ModuleContent', [
             'product' => $this->productToArray($product),
             'config' => $product->member_area_config,
+            'base_url' => $this->baseUrlForRequest($product, $request),
             'slug' => $slug,
             'module' => [
                 'id' => $module->id,
@@ -262,10 +264,12 @@ class MemberAreaAppController extends Controller
                 ->values()
                 ->all();
         }
+
         return Inertia::render('MemberAreaApp/Lesson', [
             'product' => $this->productToArray($product),
             'config' => $product->member_area_config,
             'lesson' => $lessonPayload,
+            'base_url' => $this->baseUrlForRequest($product, $request),
             'slug' => $slug,
             'comments_enabled' => $commentsEnabled,
             'comments_require_approval' => $commentsRequireApproval,
@@ -295,6 +299,7 @@ class MemberAreaAppController extends Controller
             return redirect()->back();
         }
         $percent = $this->progressService->completionPercent($product, $user);
+
         return response()->json(['success' => true, 'progress_percent' => $percent, 'newly_unlocked_achievements' => $newlyUnlocked]);
     }
 
@@ -332,6 +337,7 @@ class MemberAreaAppController extends Controller
         if ($request->expectsJson()) {
             return response()->json(['success' => true, 'message' => $message]);
         }
+
         return redirect()->back()->with('success', $message);
     }
 
@@ -356,6 +362,7 @@ class MemberAreaAppController extends Controller
             'product' => $this->productToArray($product),
             'config' => $product->member_area_config,
             'items' => $items,
+            'base_url' => $this->baseUrlForRequest($product, $request),
             'slug' => $slug,
             ...$this->pushProps($product),
         ] + $this->gamificationProps($product, $user));
@@ -370,8 +377,10 @@ class MemberAreaAppController extends Controller
         if ($defaultPage) {
             $routeName = $request->route()->getName();
             $pageRouteName = str_ends_with($routeName, '.host') ? 'member-area-app.comunidade.page.host' : 'member-area-app.comunidade.page';
+
             return redirect()->route($pageRouteName, ['slug' => $slug, 'pageSlug' => $defaultPage->slug]);
         }
+
         return Inertia::render('MemberAreaApp/Comunidade', [
             'product' => $this->productToArray($product),
             'config' => $product->member_area_config,
@@ -382,6 +391,7 @@ class MemberAreaAppController extends Controller
                 'slug' => $p->slug,
                 'banner_url' => $p->banner ? (new StorageService($product->tenant_id))->url($p->banner) : null,
             ])->values()->all(),
+            'base_url' => $this->baseUrlForRequest($product, $request),
             'slug' => $slug,
             ...$this->pushProps($product),
         ] + $this->gamificationProps($product, $user));
@@ -412,6 +422,7 @@ class MemberAreaAppController extends Controller
                     'avatar_url' => $c->user->avatar ? (new StorageService($product->tenant_id))->url($c->user->avatar) : null,
                 ] : null,
             ])->values()->all();
+
             return array_merge($post->toArray(), [
                 'user' => $post->user ? [
                     'id' => $post->user->id,
@@ -423,6 +434,7 @@ class MemberAreaAppController extends Controller
                 'comments' => $comments,
             ]);
         });
+
         return Inertia::render('MemberAreaApp/ComunidadePage', [
             'product' => $this->productToArray($product),
             'config' => $config,
@@ -445,6 +457,7 @@ class MemberAreaAppController extends Controller
                 'is_public_posting' => $page->is_public_posting,
             ],
             'posts' => $posts,
+            'base_url' => $this->baseUrlForRequest($product, $request),
             'slug' => $slug,
             ...$this->pushProps($product),
         ] + $this->gamificationProps($product, $user));
@@ -464,7 +477,7 @@ class MemberAreaAppController extends Controller
         $imagePath = null;
         if ($request->hasFile('image')) {
             $storage = new StorageService($product->tenant_id);
-            $imagePath = $storage->putFile('member-area-posts/' . $product->id, $request->file('image'));
+            $imagePath = $storage->putFile('member-area-posts/'.$product->id, $request->file('image'));
         }
         MemberCommunityPost::create([
             'member_community_page_id' => $page->id,
@@ -472,6 +485,7 @@ class MemberAreaAppController extends Controller
             'content' => $validated['content'],
             'image' => $imagePath,
         ]);
+
         return back()->with('success', 'Post publicado.');
     }
 
@@ -491,6 +505,7 @@ class MemberAreaAppController extends Controller
             abort(403, 'Você não pode excluir esta postagem.');
         }
         $post->delete();
+
         return back()->with('success', 'Postagem excluída.');
     }
 
@@ -504,6 +519,7 @@ class MemberAreaAppController extends Controller
         MemberCommunityPostLike::firstOrCreate(
             ['member_community_post_id' => $post->id, 'user_id' => $request->user()->id]
         );
+
         return response()->json([
             'likes_count' => $post->likes()->count(),
             'user_has_liked' => true,
@@ -520,6 +536,7 @@ class MemberAreaAppController extends Controller
         MemberCommunityPostLike::where('member_community_post_id', $post->id)
             ->where('user_id', $request->user()->id)
             ->delete();
+
         return response()->json([
             'likes_count' => $post->likes()->count(),
             'user_has_liked' => false,
@@ -554,6 +571,7 @@ class MemberAreaAppController extends Controller
                 ],
             ]);
         }
+
         return back()->with('success', 'Comentário adicionado.');
     }
 
@@ -615,6 +633,7 @@ class MemberAreaAppController extends Controller
             'progress_percent' => $progressPercent,
             'completion_required_percent' => $requiredPercent,
             'certificate' => $certificatePayload,
+            'base_url' => $this->baseUrlForRequest($product, $request),
             'slug' => $slug,
             'newly_unlocked_achievements' => $newlyUnlocked,
             ...$this->pushProps($product),
@@ -635,18 +654,40 @@ class MemberAreaAppController extends Controller
             'keys.auth' => ['required', 'string'],
             'keys.p256dh' => ['required', 'string'],
         ]);
-        \App\Models\MemberPushSubscription::updateOrCreate(
+        $keys = $validated['keys'];
+        $keys['auth'] = $this->normalizeBase64KeyForPush((string) ($keys['auth'] ?? ''));
+        $keys['p256dh'] = $this->normalizeBase64KeyForPush((string) ($keys['p256dh'] ?? ''));
+        $subscription = \App\Models\MemberPushSubscription::updateOrCreate(
+            [
+                'endpoint' => $validated['endpoint'],
+            ],
             [
                 'user_id' => $request->user()->id,
                 'product_id' => $product->id,
-            ],
-            [
-                'endpoint' => $validated['endpoint'],
-                'keys' => $validated['keys'],
+                'keys' => $keys,
                 'user_agent' => $request->userAgent(),
             ]
         );
-        return response()->json(['success' => true]);
+
+        return response()->json([
+            'success' => true,
+            'subscribed' => true,
+            'subscription_id' => $subscription->id,
+            'updated_at' => $subscription->updated_at?->toISOString(),
+        ]);
+    }
+
+    private function normalizeBase64KeyForPush(string $key): string
+    {
+        $key = trim($key);
+        if ($key === '') {
+            return $key;
+        }
+        if (str_contains($key, '+') || str_contains($key, '/')) {
+            return strtr($key, ['+' => '-', '/' => '_']);
+        }
+
+        return $key;
     }
 
     private function getProduct(Request $request): Product
@@ -655,6 +696,7 @@ class MemberAreaAppController extends Controller
         if (! $product instanceof Product) {
             abort(404);
         }
+
         return $product;
     }
 
@@ -664,6 +706,7 @@ class MemberAreaAppController extends Controller
         $config = $product->member_area_config;
         $pwa = $config['pwa'] ?? [];
         $pushEnabled = (bool) ($pwa['push_enabled'] ?? false);
+
         return [
             'push_enabled' => $pushEnabled,
             'vapid_public' => $pushEnabled ? ($pwa['vapid_public'] ?? null) : null,
@@ -678,6 +721,7 @@ class MemberAreaAppController extends Controller
         if (empty($gamification['enabled'])) {
             return ['gamification_achievements' => []];
         }
+
         return [
             'gamification_achievements' => $this->gamificationService->getAchievementsForUser($product, $user),
         ];
@@ -687,6 +731,7 @@ class MemberAreaAppController extends Controller
     {
         $config = $product->member_area_config;
         $logos = $config['logos'] ?? [];
+
         return [
             'id' => $product->id,
             'name' => $product->name,
@@ -768,6 +813,7 @@ class MemberAreaAppController extends Controller
         if ($sectionType === 'products') {
             $related = $m->relatedProduct;
             $hasAccess = $m->related_product_id ? isset($userProductIds[$m->related_product_id]) : false;
+
             return [
                 'id' => $m->id,
                 'title' => $m->title,
@@ -780,7 +826,7 @@ class MemberAreaAppController extends Controller
                     'name' => $related->name,
                     'image_url' => $related->image ? (new StorageService($product->tenant_id))->url($related->image) : null,
                     'checkout_slug' => $related->checkout_slug,
-                    'checkout_url' => url('/c/' . $related->checkout_slug),
+                    'checkout_url' => url('/c/'.$related->checkout_slug),
                     'member_area_slug' => $related->checkout_slug,
                 ] : null,
                 'has_access' => $hasAccess,
@@ -818,6 +864,7 @@ class MemberAreaAppController extends Controller
         if (is_string($cpf) && trim($cpf) !== '') {
             return ['name' => $user->name ?? '', 'email' => $user->email ?? '', 'cpf' => trim($cpf)];
         }
+
         return ['name' => $user->name ?? '', 'email' => $user->email ?? '', 'cpf' => null];
     }
 
@@ -828,7 +875,7 @@ class MemberAreaAppController extends Controller
             abort(404);
         }
         $slug = $slug ?? $request->route('slug') ?? $request->attributes->get('member_area_slug');
-        $baseUrl = rtrim($this->resolver->baseUrlForProduct($product), '/');
+        $baseUrl = rtrim($this->baseUrlForRequest($product, $request), '/');
         $config = $product->member_area_config;
         $pwa = $config['pwa'] ?? [];
         $logos = $config['logos'] ?? [];
@@ -839,7 +886,7 @@ class MemberAreaAppController extends Controller
         $icons = [];
         $faviconUrl = $logos['favicon'] ?? $pwa['favicon'] ?? null;
         if ($faviconUrl) {
-            $iconUrl = str_starts_with($faviconUrl, 'http') ? $faviconUrl : (str_starts_with($faviconUrl, '/') ? $request->getSchemeAndHttpHost() . $faviconUrl : $request->getSchemeAndHttpHost() . '/' . ltrim($faviconUrl, '/'));
+            $iconUrl = str_starts_with($faviconUrl, 'http') ? $faviconUrl : (str_starts_with($faviconUrl, '/') ? $request->getSchemeAndHttpHost().$faviconUrl : $request->getSchemeAndHttpHost().'/'.ltrim($faviconUrl, '/'));
             $icons[] = ['src' => $iconUrl, 'sizes' => '192x192', 'type' => 'image/png', 'purpose' => 'any maskable'];
             $icons[] = ['src' => $iconUrl, 'sizes' => '512x512', 'type' => 'image/png', 'purpose' => 'any maskable'];
         }
@@ -847,7 +894,7 @@ class MemberAreaAppController extends Controller
             foreach ($pwa['icons'] as $icon) {
                 $src = $icon['src'] ?? null;
                 if ($src && ! str_starts_with($src, 'http')) {
-                    $src = $request->getSchemeAndHttpHost() . (str_starts_with($src, '/') ? $src : '/' . ltrim($src, '/'));
+                    $src = $request->getSchemeAndHttpHost().(str_starts_with($src, '/') ? $src : '/'.ltrim($src, '/'));
                 }
                 if ($src) {
                     $icons[] = [
@@ -861,18 +908,22 @@ class MemberAreaAppController extends Controller
         }
         if (empty($icons)) {
             $icons[] = [
-                'src' => $request->getSchemeAndHttpHost() . '/images/gateways/pix.svg',
+                'src' => $request->getSchemeAndHttpHost().'/images/gateways/pix.svg',
                 'sizes' => '192x192',
                 'type' => 'image/svg+xml',
                 'purpose' => 'any maskable',
             ];
         }
 
+        // `id` único para o Android tratar como app separado do painel (mesmo origin); evita "já está instalado"
+        $manifestId = $slug ? '/m/'.$slug : ($baseUrl ? parse_url($baseUrl, PHP_URL_PATH) : '/m/member-area');
+
         $manifest = [
+            'id' => $manifestId,
             'name' => $name,
             'short_name' => $shortName,
             'start_url' => $baseUrl,
-            'scope' => $baseUrl . '/',
+            'scope' => $baseUrl.'/',
             'display' => 'standalone',
             'background_color' => $config['theme']['background'] ?? '#18181b',
             'theme_color' => $themeColor,
@@ -880,5 +931,15 @@ class MemberAreaAppController extends Controller
         ];
 
         return response()->json($manifest)->header('Content-Type', 'application/manifest+json');
+    }
+
+    private function baseUrlForRequest(Product $product, Request $request): string
+    {
+        $accessType = $request->attributes->get('member_area_access_type');
+        if (in_array($accessType, ['subdomain', 'custom'], true)) {
+            return rtrim($request->getSchemeAndHttpHost(), '/');
+        }
+
+        return $this->resolver->baseUrlForProduct($product);
     }
 }

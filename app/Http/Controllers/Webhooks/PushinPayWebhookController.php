@@ -47,11 +47,7 @@ class PushinPayWebhookController extends Controller
             $mappedStatus = 'cancelled';
         }
 
-        if (app()->environment('local')) {
-            ProcessPaymentWebhook::dispatchSync('pushinpay', $transactionId, $event, $mappedStatus, $request->all());
-        } else {
-            ProcessPaymentWebhook::dispatch('pushinpay', $transactionId, $event, $mappedStatus, $request->all());
-        }
+        ProcessPaymentWebhook::dispatchSync('pushinpay', $transactionId, $event, $mappedStatus, $request->all());
 
         return response()->json(['received' => true]);
     }

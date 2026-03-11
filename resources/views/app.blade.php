@@ -1,3 +1,9 @@
+@php
+    $path = request()->path();
+    $isMemberArea = str_starts_with($path, 'm/') || request()->attributes->get('member_area_slug');
+    $isCheckout = str_starts_with($path, 'c/') || str_starts_with($path, 'checkout') || str_starts_with($path, 'api-checkout');
+    $skipPanelPwa = $isMemberArea || $isCheckout;
+@endphp
 <!DOCTYPE html>
 <html lang="{{ str_replace('_', '-', app()->getLocale()) }}">
 <head>
@@ -8,11 +14,22 @@
     </script>
     <meta name="csrf-token" content="{{ csrf_token() }}">
     <title>{{ config('app.name', 'Getfy') }}</title>
+    @unless($skipPanelPwa)
     <link rel="icon" href="https://cdn.getfy.cloud/collapsed-logo.png" type="image/png">
     <link rel="manifest" href="{{ url('/manifest.json') }}">
+    <meta name="theme-color" content="{{ config('getfy.theme_primary', '#0ea5e9') }}">
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="default">
+    @if(is_file(public_path('icons/icon-192x192.png')))
+    <link rel="apple-touch-icon" href="{{ url('/icons/icon-192x192.png') }}">
+    @elseif(is_file(public_path('icons/icon-512x512.png')))
+    <link rel="apple-touch-icon" href="{{ url('/icons/icon-512x512.png') }}">
+    @endif
     <script>
         (function(){var e=null;window.addEventListener('beforeinstallprompt',function(t){t.preventDefault();e=t;window.__pwaInstallPrompt=e;},{capture:true});Object.defineProperty(window,'__pwaInstallPrompt',{get:function(){return e;},set:function(t){e=t;}});})();
     </script>
+    @endunless
     @inertiaHead
     @vite(['resources/css/app.css', 'resources/js/app.js'])
 </head>

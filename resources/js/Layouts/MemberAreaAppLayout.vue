@@ -2,8 +2,9 @@
 import { computed, ref, onMounted, watch, onUnmounted } from 'vue';
 import { Link, usePage, Head, router } from '@inertiajs/vue3';
 import PwaInstallPrompt from '@/components/member-area/PwaInstallPrompt.vue';
+import MemberAreaNotificationsPanel from '@/components/member-area/MemberAreaNotificationsPanel.vue';
 import Button from '@/components/ui/Button.vue';
-import { ChevronDown, User, X, Camera, Lock, CheckCircle, AlertCircle, Menu, Trophy } from 'lucide-vue-next';
+import { Bell, ChevronDown, User, X, Camera, Lock, CheckCircle, AlertCircle, Menu, Trophy } from 'lucide-vue-next';
 
 const page = usePage();
 const props = computed(() => page.props);
@@ -77,8 +78,19 @@ function onWindowScroll() {
 }
 
 const basePath = computed(() => `/m/${slug.value}`);
-const baseUrl = computed(() => props.value?.base_url || (typeof window !== 'undefined' ? `${window.location.origin}${basePath.value}` : ''));
+const baseUrl = computed(() => {
+    if (props.value?.base_url) return props.value.base_url;
+    if (typeof window === 'undefined') return '';
+    // Em host próprio/subdomínio, usar a origem atual para evitar montar /m/{slug} incorretamente.
+    if (!window.location.pathname.startsWith('/m/')) return window.location.origin;
+    return `${window.location.origin}${basePath.value}`;
+});
 const accountBaseUrl = computed(() => String(baseUrl.value || '').replace(/\/$/, ''));
+/** Base path para API de notificações: /m/slug quando acesso por path, vazio quando por host. */
+const notificationsApiBasePath = computed(() => {
+    if (typeof window === 'undefined') return basePath.value;
+    return window.location.pathname.startsWith('/m/') ? basePath.value : '';
+});
 
 const initials = computed(() => {
     if (!user.value?.name) return '?';
@@ -87,6 +99,8 @@ const initials = computed(() => {
     return (parts[0][0] || '?').toUpperCase();
 });
 
+const notificationsPanelOpen = ref(false);
+const memberNotificationsUnreadCount = ref(props.value?.member_notifications_unread_count ?? 0);
 const accountMenuOpen = ref(false);
 const accountMenuRef = ref(null);
 const accountModalOpen = ref(false);
@@ -245,13 +259,29 @@ const themeColor = computed(() => config.value?.pwa?.theme_color || '#0ea5e9');
 const appName = computed(() => config.value?.pwa?.name || product.value?.name || 'App');
 const pageTitle = computed(() => product.value?.name || config.value?.pwa?.name || 'Área de Membros');
 
-const canRegisterPush = computed(() => Boolean(push_enabled.value && vapid_public.value && typeof navigator !== 'undefined' && 'serviceWorker' in navigator && 'PushManager' in navigator));
+const canRegisterPush = computed(() => Boolean(
+    push_enabled.value &&
+    vapid_public.value &&
+    typeof window !== 'undefined' &&
+    typeof navigator !== 'undefined' &&
+    'serviceWorker' in navigator &&
+    'PushManager' in window
+));
+
+/** Detecta se o app está rodando como PWA instalado (standalone). */
+const isStandalonePwa = computed(() => {
+    if (typeof window === 'undefined') return false;
+    if (window.matchMedia('(display-mode: standalone)').matches) return true;
+    if (window.matchMedia('(display-mode: fullscreen)').matches && window.navigator.standalone === false) return false;
+    return !!window.navigator.standalone;
+});
 
 const pushSubscribing = ref(false);
 const pushRegistered = ref(false);
 const pushAutoPromptAttempted = ref(false);
 
-const PUSH_PROMPT_DISMISSED_KEY = computed(() => `push_prompt_dismissed_${slug.value || 'default'}`);
+/** No PWA instalado usa chave separada para "dispensado", assim o prompt aparece após instalar e logar mesmo se dispensou no browser. */
+const PUSH_PROMPT_DISMISSED_KEY = computed(() => `push_prompt_dismissed_${slug.value || 'default'}${isStandalonePwa.value ? '_standalone' : ''}`);
 
 function shouldAutoPromptPush() {
     if (!canRegisterPush.value || pushRegistered.value || pushSubscribing.value || pushAutoPromptAttempted.value) return false;
@@ -276,8 +306,55 @@ function urlBase64ToUint8Array(base64String) {
     return outputArray;
 }
 
+function serializeSubscription(sub) {
+    const p256dh = sub?.getKey?.('p256dh');
+    const auth = sub?.getKey?.('auth');
+    return {
+        endpoint: sub?.endpoint,
+        keys: {
+            p256dh: p256dh ? btoa(String.fromCharCode.apply(null, new Uint8Array(p256dh))) : '',
+            auth: auth ? btoa(String.fromCharCode.apply(null, new Uint8Array(auth))) : '',
+        },
+    };
+}
+
+async function syncMemberPushSubscription(sub, subscribeUrl, csrf) {
+    const body = serializeSubscription(sub);
+    if (!body.endpoint || !body.keys?.p256dh || !body.keys?.auth) {
+        throw new Error('Subscription inválida para sincronização.');
+    }
+    const res = await fetch(subscribeUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-CSRF-TOKEN': csrf, Accept: 'application/json', 'X-Requested-With': 'XMLHttpRequest' },
+        body: JSON.stringify(body),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok || !data?.success) {
+        throw new Error(data?.message || 'Não foi possível sincronizar a inscrição de notificações.');
+    }
+    return true;
+}
+
+/** Verifica se já existe subscription no browser e atualiza pushRegistered (para o painel de notificações). */
+async function checkExistingSubscriptionForPanel() {
+    if (!canRegisterPush.value || typeof navigator === 'undefined' || !navigator.serviceWorker?.getRegistration) return;
+    const scope = baseUrl.value ? (baseUrl.value.endsWith('/') ? baseUrl.value : baseUrl.value + '/') : null;
+    if (!scope) return;
+    try {
+        const reg = await navigator.serviceWorker.getRegistration(scope);
+        const existing = await reg?.pushManager?.getSubscription?.();
+        if (!existing) return;
+        const subscribeUrl = `${scope}push-subscribe`;
+        const csrf = document.querySelector('meta[name="csrf-token"]')?.content ?? '';
+        await syncMemberPushSubscription(existing, subscribeUrl, csrf);
+        pushRegistered.value = true;
+    } catch (e) {
+        console.warn('MemberArea push sync failed (panel check):', e);
+    }
+}
+
 async function registerPushSubscription() {
-    if (!canRegisterPush.value || pushSubscribing.value) return;
+    if (!canRegisterPush.value || pushSubscribing.value) return false;
     const scope = baseUrl.value.endsWith('/') ? baseUrl.value : baseUrl.value + '/';
     const swUrl = `${scope}sw.js`;
     const subscribeUrl = `${scope}push-subscribe`;
@@ -286,38 +363,24 @@ async function registerPushSubscription() {
     pushAutoPromptAttempted.value = true;
     try {
         const reg = await navigator.serviceWorker.register(swUrl, { scope });
-        const sub = await reg.pushManager.subscribe({
+        const existing = await reg.pushManager?.getSubscription?.();
+        const sub = existing || await reg.pushManager.subscribe({
             userVisibleOnly: true,
             applicationServerKey: urlBase64ToUint8Array(vapid_public.value),
         });
-        const p256dh = sub.getKey('p256dh');
-        const auth = sub.getKey('auth');
-        const body = {
-            endpoint: sub.endpoint,
-            keys: {
-                p256dh: p256dh ? btoa(String.fromCharCode.apply(null, new Uint8Array(p256dh))) : '',
-                auth: auth ? btoa(String.fromCharCode.apply(null, new Uint8Array(auth))) : '',
-            },
-        };
-        const res = await fetch(subscribeUrl, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json', 'X-CSRF-TOKEN': csrf, Accept: 'application/json', 'X-Requested-With': 'XMLHttpRequest' },
-            body: JSON.stringify(body),
-        });
-        if (res.ok) pushRegistered.value = true;
-        else {
-            const data = await res.json().catch(() => ({}));
-            alert(data?.message || 'Não foi possível ativar as notificações.');
-        }
+        await syncMemberPushSubscription(sub, subscribeUrl, csrf);
+        pushRegistered.value = true;
+        return true;
     } catch (e) {
         if (e.name === 'NotAllowedError') {
             try {
                 localStorage.setItem(PUSH_PROMPT_DISMISSED_KEY.value, Date.now().toString());
             } catch (_) {}
-            return;
+            return false;
         }
         console.error('Push subscribe error', e);
-        alert('Não foi possível ativar as notificações. Verifique as permissões do navegador.');
+        alert(e?.message || 'Não foi possível ativar as notificações. Verifique as permissões do navegador.');
+        return false;
     } finally {
         pushSubscribing.value = false;
     }
@@ -326,28 +389,33 @@ async function registerPushSubscription() {
 onMounted(() => {
     if (pageTitle.value) document.title = pageTitle.value;
     const scope = baseUrl.value ? (baseUrl.value.endsWith('/') ? baseUrl.value : baseUrl.value + '/') : null;
+    // No PWA instalado (standalone), delay maior para o prompt aparecer depois de logar e ver a tela
+    const promptDelayMs = isStandalonePwa.value ? 3000 : 1500;
+    function schedulePushPrompt() {
+        if (!shouldAutoPromptPush()) return;
+        setTimeout(() => {
+            if (shouldAutoPromptPush()) registerPushSubscription();
+        }, promptDelayMs);
+    }
     if (scope && typeof navigator !== 'undefined' && navigator.serviceWorker) {
         navigator.serviceWorker.register(`${scope}sw.js`, { scope }).then(async (reg) => {
             if (reg.pushManager && canRegisterPush.value) {
                 try {
                     const existing = await reg.pushManager.getSubscription();
                     if (existing) {
+                        const subscribeUrl = `${scope}push-subscribe`;
+                        const csrf = document.querySelector('meta[name="csrf-token"]')?.content ?? '';
+                        await syncMemberPushSubscription(existing, subscribeUrl, csrf);
                         pushRegistered.value = true;
                         return;
                     }
-                } catch (_) {}
+                } catch (e) {
+                    console.warn('MemberArea push sync failed (onMounted):', e);
+                }
             }
-            if (shouldAutoPromptPush()) {
-                setTimeout(() => {
-                    if (shouldAutoPromptPush()) registerPushSubscription();
-                }, 1500);
-            }
+            schedulePushPrompt();
         }).catch(() => {
-            if (shouldAutoPromptPush()) {
-                setTimeout(() => {
-                    if (shouldAutoPromptPush()) registerPushSubscription();
-                }, 1500);
-            }
+            schedulePushPrompt();
         });
     }
 });
@@ -360,6 +428,12 @@ watch(
         const list = flashList ?? pageList ?? [];
         if (Array.isArray(list) && list.length > 0) openAchievementModals(list);
     },
+    { immediate: true }
+);
+
+watch(
+    () => props.value?.member_notifications_unread_count,
+    (v) => { if (v !== undefined) memberNotificationsUnreadCount.value = v; },
     { immediate: true }
 );
 </script>
@@ -497,6 +571,22 @@ watch(
                     @click="registerPushSubscription"
                 >
                     {{ pushSubscribing ? 'Ativando…' : 'Ativar notificações' }}
+                </button>
+                <button
+                    v-if="user"
+                    type="button"
+                    class="relative flex h-9 w-9 items-center justify-center rounded-lg text-white/90 drop-shadow transition hover:bg-white/10"
+                    aria-label="Notificações"
+                    @click="notificationsPanelOpen = true"
+                >
+                    <Bell class="h-5 w-5" />
+                    <span
+                        v-if="memberNotificationsUnreadCount > 0"
+                        class="absolute -right-0.5 -top-0.5 flex h-4 min-w-[1rem] items-center justify-center rounded-full px-1 text-[10px] font-semibold text-white"
+                        :style="{ backgroundColor: 'var(--ma-primary)' }"
+                    >
+                        {{ memberNotificationsUnreadCount > 99 ? '99+' : memberNotificationsUnreadCount }}
+                    </span>
                 </button>
                 <div v-if="user" ref="accountMenuRef" class="relative">
                     <button
@@ -692,6 +782,18 @@ watch(
             </main>
         </div>
         <PwaInstallPrompt v-if="slug" :app-name="appName" :slug="slug" />
+        <MemberAreaNotificationsPanel
+            :open="notificationsPanelOpen"
+            :base-path="notificationsApiBasePath"
+            :push-enabled="push_enabled"
+            :push-can-register="canRegisterPush"
+            :push-registered="pushRegistered"
+            :push-subscribing="pushSubscribing"
+            :register-push="registerPushSubscription"
+            :check-existing-subscription="checkExistingSubscriptionForPanel"
+            @update:open="notificationsPanelOpen = $event"
+            @unread-count-update="memberNotificationsUnreadCount = $event"
+        />
 
         <!-- Modal Minha conta -->
         <Teleport to="body">

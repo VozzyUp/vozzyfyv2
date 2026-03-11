@@ -145,7 +145,16 @@ const showPreview = computed(() => currentTab.value?.hasPreview ?? false);
 const previewMode = computed(() => currentTab.value?.previewMode ?? 'area');
 
 function saveConfig() {
-    configForm.put(`${base.value}/config`, {
+    const payload = {
+        member_area_config: configForm.member_area_config,
+    };
+    // Evita bloquear salvamento de outras abas por validação de domínio.
+    if (activeTab.value === 'pwa') {
+        payload.domain_type = configForm.domain_type ?? 'path';
+        payload.domain_value = configForm.domain_value ?? '';
+    }
+
+    configForm.transform(() => ({ ...payload, _method: 'PUT' })).post(`${base.value}/config`, {
         preserveScroll: true,
         onSuccess: () => (activeTab.value = activeTab.value),
     });

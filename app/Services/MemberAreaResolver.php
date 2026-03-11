@@ -15,12 +15,14 @@ class MemberAreaResolver
      */
     public function resolve(Request $request): ?array
     {
-        $host = $request->getHost();
+        $hostRaw = strtolower(rtrim(trim($request->getHost()), '.'));
+        $hostNormalized = MemberAreaDomain::normalizeCustomHost($hostRaw);
+        $hosts = array_values(array_unique(array_filter([$hostRaw, $hostNormalized])));
         $path = $request->path();
 
         // Custom domain: host matches a stored custom domain
         $domain = MemberAreaDomain::where('type', MemberAreaDomain::TYPE_CUSTOM)
-            ->where('value', $host)
+            ->whereIn('value', $hosts)
             ->with('product')
             ->first();
         if ($domain && $domain->product && $domain->product->type === Product::TYPE_AREA_MEMBROS) {
@@ -35,7 +37,7 @@ class MemberAreaResolver
         if (config('members.subdomain_enabled')) {
             $base = config('members.subdomain_base', '');
             if ($base && str_ends_with($host, $base) && $host !== $base) {
-                $prefix = str_replace('.' . $base, '', $host);
+                $prefix = str_replace('.'.$base, '', $host);
                 if ($prefix !== $host) {
                     $slug = $prefix;
                     $product = Product::where('checkout_slug', $slug)
@@ -119,22 +121,23 @@ class MemberAreaResolver
     {
         $domain = $product->memberAreaDomain;
         $appUrl = rtrim(config('app.url'), '/');
+        $protocol = str_starts_with($appUrl, 'https') ? 'https' : 'http';
 
         if ($domain) {
             if ($domain->type === MemberAreaDomain::TYPE_CUSTOM && $domain->value) {
-                return 'https://' . $domain->value;
+                return $protocol.'://'.$domain->value;
             }
             if ($domain->type === MemberAreaDomain::TYPE_SUBDOMAIN && config('members.subdomain_enabled')) {
                 $base = config('members.subdomain_base');
                 $slug = $domain->value ?: $product->checkout_slug;
-                $protocol = str_starts_with($appUrl, 'https') ? 'https' : 'http';
-                return $protocol . '://' . $slug . '.' . $base;
+
+                return $protocol.'://'.$slug.'.'.$base;
             }
             if ($domain->type === MemberAreaDomain::TYPE_PATH && $domain->value !== null && $domain->value !== '') {
-                return $appUrl . '/m/' . $domain->value;
+                return $appUrl.'/m/'.$domain->value;
             }
         }
 
-        return $appUrl . '/m/' . $product->checkout_slug;
+        return $appUrl.'/m/'.$product->checkout_slug;
     }
 }

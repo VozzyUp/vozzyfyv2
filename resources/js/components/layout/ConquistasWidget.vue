@@ -5,7 +5,7 @@ import { usePage } from '@inertiajs/vue3';
 import { formatCompactCurrency } from '@/lib/utils';
 
 const props = defineProps({
-    variant: { type: String, default: 'header' }, // 'header' | 'sidebar'
+    variant: { type: String, default: 'header' }, // 'header' | 'sidebar' | 'dashboard'
 });
 
 const page = usePage();
@@ -47,7 +47,10 @@ const totalLabel = computed(() => {
         v-if="progress"
         href="/conquistas"
         class="group flex shrink-0 items-center gap-3 rounded-lg px-3 py-2 transition-colors hover:bg-zinc-100 dark:hover:bg-zinc-800"
-        :class="{ 'flex-col items-stretch gap-2': props.variant === 'sidebar' }"
+        :class="{
+            'flex-col items-stretch gap-2': props.variant === 'sidebar',
+            'w-full rounded-xl border border-zinc-200 px-4 py-3 dark:border-zinc-700': props.variant === 'dashboard',
+        }"
         title="Conquistas"
     >
         <div
@@ -68,15 +71,23 @@ const totalLabel = computed(() => {
             />
         </div>
         <div
-            class="min-w-0"
+            class="min-w-0 flex-1"
             :class="[
-                props.variant === 'sidebar' ? 'w-full' : 'hidden w-[130px] sm:block',
+                props.variant === 'sidebar' ? 'w-full' : '',
+                props.variant === 'dashboard' ? 'w-full' : '',
+                props.variant === 'header' ? 'hidden w-[130px] sm:block' : '',
             ]"
         >
+            <p
+                v-if="props.variant === 'header' || props.variant === 'dashboard'"
+                class="mb-1 text-[10px] font-semibold uppercase tracking-wide text-zinc-600 dark:text-zinc-400"
+            >
+                FATURAMENTO
+            </p>
             <div
                 class="w-full overflow-hidden rounded-full bg-zinc-200 dark:bg-zinc-700"
                 :class="[
-                    props.variant === 'sidebar' ? 'h-2.5' : 'h-2',
+                    props.variant === 'sidebar' || props.variant === 'dashboard' ? 'h-2.5' : 'h-2',
                 ]"
             >
                 <div
@@ -87,7 +98,7 @@ const totalLabel = computed(() => {
             <p
                 class="mt-1 truncate text-zinc-500 dark:text-zinc-400"
                 :class="[
-                    props.variant === 'sidebar' ? 'text-xs' : 'text-[11px]',
+                    props.variant === 'sidebar' || props.variant === 'dashboard' ? 'text-xs' : 'text-[11px]',
                 ]"
             >
                 {{ totalLabel }}

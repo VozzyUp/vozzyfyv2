@@ -9,6 +9,11 @@ return new class extends Migration
 {
     public function up(): void
     {
+        $driver = Schema::getConnection()->getDriverName();
+        if ($driver !== 'mysql' && $driver !== 'mariadb') {
+            return;
+        }
+
         if (! Schema::hasColumn('orders', 'api_application_id')) {
             Schema::table('orders', function (Blueprint $table) {
                 $table->foreignId('api_application_id')->nullable()->after('subscription_plan_id')->constrained('api_applications')->nullOnDelete();
@@ -63,6 +68,11 @@ return new class extends Migration
 
     public function down(): void
     {
+        $driver = Schema::getConnection()->getDriverName();
+        if ($driver !== 'mysql' && $driver !== 'mariadb') {
+            return;
+        }
+
         Schema::table('orders', function (Blueprint $table) {
             $table->dropForeign(['api_application_id']);
             $table->dropColumn('api_checkout_session_id');

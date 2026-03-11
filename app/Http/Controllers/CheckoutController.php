@@ -274,7 +274,7 @@ class CheckoutController extends Controller
         $payload['card_max_installments'] = min(12, max(1, (int) ($cardInstallmentsConfig['max'] ?? 1)));
 
         $orderBumps = $product->orderBumps()->with(['targetProduct', 'targetProductOffer'])->get();
-        $payload['order_bumps'] = $orderBumps->map(function (ProductOrderBump $b) {
+        $payload['order_bumps'] = $orderBumps->map(function (ProductOrderBump $b) use ($product) {
             $target = $b->targetProduct;
             $imageUrl = $target && $target->image
                 ? (new StorageService($product->tenant_id))->url($target->image)

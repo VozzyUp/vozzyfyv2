@@ -54,11 +54,7 @@ class AsaasWebhookController extends Controller
             $mappedStatus = 'pending';
         }
 
-        if (app()->environment('local')) {
-            ProcessPaymentWebhook::dispatchSync('asaas', $transactionId, $event, $mappedStatus, $request->all());
-        } else {
-            ProcessPaymentWebhook::dispatch('asaas', $transactionId, $event, $mappedStatus, $request->all());
-        }
+        ProcessPaymentWebhook::dispatchSync('asaas', $transactionId, $event, $mappedStatus, $request->all());
 
         return response()->json(['received' => true]);
     }
