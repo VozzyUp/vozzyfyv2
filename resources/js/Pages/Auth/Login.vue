@@ -100,11 +100,13 @@ function submit() {
             </p>
         </div>
 
-        <!-- Direita: imagem (~70%) - placeholder até o usuário enviar; trocar URL em backgroundImage quando tiver a imagem final -->
         <div
-            class="hidden bg-zinc-100 dark:bg-zinc-900 lg:block lg:flex-1"
-            style="background-image: linear-gradient(135deg, rgba(14, 165, 233, 0.06) 0%, transparent 60%);"
+            class="relative hidden overflow-hidden bg-zinc-100 dark:bg-zinc-900 lg:flex lg:flex-1 lg:items-center lg:justify-center"
             aria-hidden="true"
-        />
+        >
+            <div class="absolute inset-0 bg-gradient-to-br from-[#c8fa64]/20 via-transparent to-sky-500/10" />
+            <img src="https://cdn.getfy.cloud/login.webp" alt="" class="absolute inset-0 h-full w-full object-cover" />
+            <div class="absolute inset-0 bg-gradient-to-t from-black/25 via-black/5 to-transparent" />
+        </div>
     </div>
 </template>

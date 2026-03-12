@@ -4,78 +4,76 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>Configuração inicial (Docker) - Getfy</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        primary: '#c8fa64',
+                    }
+                }
+            }
+        }
+    </script>
     <style>
-        :root { color-scheme: dark; }
-        body { margin:0; font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Arial, "Noto Sans", "Liberation Sans", sans-serif; background:#0b0b0f; color:#e4e4e7; }
-        .wrap { max-width: 720px; margin: 0 auto; padding: 48px 20px; }
-        .card { background:#111827; border:1px solid #1f2937; border-radius:14px; padding: 22px; }
-        h1 { margin: 0 0 10px; font-size: 22px; }
-        p { margin: 0 0 14px; color:#a1a1aa; line-height: 1.5; }
-        label { display:block; font-size: 13px; color:#d4d4d8; margin: 14px 0 6px; }
-        input, select { width:100%; padding: 10px 12px; border-radius: 10px; border:1px solid #374151; background:#0b1220; color:#e4e4e7; outline: none; }
-        input:focus, select:focus { border-color:#22c55e; box-shadow: 0 0 0 3px rgba(34,197,94,0.18); }
-        .row { display:flex; gap: 12px; }
-        .row > div { flex:1; }
-        .btn { margin-top: 18px; width:100%; border:0; border-radius: 10px; padding: 12px 14px; background:#22c55e; color:#052e16; font-weight: 700; cursor:pointer; }
-        .hint { margin-top: 12px; font-size: 12px; color:#9ca3af; }
-        .error { margin-top: 10px; padding: 10px 12px; border-radius: 10px; background:#3f1d1d; border:1px solid #7f1d1d; color:#fecaca; }
-        .ok { margin-top: 10px; padding: 10px 12px; border-radius: 10px; background:#0f2a1d; border:1px solid #14532d; color:#bbf7d0; }
-        code { background: rgba(255,255,255,0.06); padding: 2px 6px; border-radius: 6px; }
-        .top { margin-bottom: 16px; }
+        input:focus { outline: none; box-shadow: 0 0 0 2px rgba(200, 250, 100, 0.3); }
     </style>
 </head>
-<body>
-    <div class="wrap">
-        <div class="top">
-            <h1>Configuração inicial (Docker)</h1>
-            <p>Defina o domínio/URL pública para a plataforma gerar links corretos (checkout, webhooks, PWA, e-mails, etc.).</p>
-        </div>
+<body class="min-h-screen bg-zinc-100 dark:bg-zinc-900 text-zinc-900 dark:text-white">
+    <div class="min-h-screen flex flex-col items-center justify-center px-6 py-10">
+        <div class="w-full max-w-xl">
+            <div class="text-center mb-8">
+                <img src="https://cdn.getfy.cloud/collapsed-logo.png" alt="Getfy" class="mx-auto mb-6 h-14 w-auto object-contain" />
+                <h1 class="text-2xl font-bold text-zinc-900 dark:text-white">Configuração Docker</h1>
+                <p class="mt-1 text-sm text-zinc-600 dark:text-zinc-400">Defina o domínio público para gerar links corretos</p>
+            </div>
 
-        <div class="card">
-            @if (session('success'))
-                <div class="ok">{{ session('success') }}</div>
-            @endif
-
-            @if ($errors->any())
-                <div class="error">
-                    @foreach ($errors->all() as $err)
-                        <div>{{ $err }}</div>
-                    @endforeach
-                </div>
-            @endif
-
-            <form method="post" action="{{ url('/docker-setup') }}">
-                @csrf
-
-                <div class="row">
-                    <div>
-                        <label for="scheme">Protocolo</label>
-                        <select id="scheme" name="scheme">
-                            <option value="http" @selected(old('scheme', $scheme) === 'http')>http</option>
-                            <option value="https" @selected(old('scheme', $scheme) === 'https')>https</option>
-                        </select>
+            <div class="rounded-2xl border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900/40 shadow-sm p-6">
+                @if (session('success'))
+                    <div class="mb-4 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800 dark:border-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-200">
+                        {{ session('success') }}
                     </div>
-                    <div>
-                        <label for="port">Porta (opcional)</label>
-                        <input id="port" name="port" type="number" min="1" max="65535" value="{{ old('port') }}" placeholder="80 / 443 / 8080">
+                @endif
+
+                @if ($errors->any())
+                    <div class="mb-4 rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-800 dark:border-rose-800 dark:bg-rose-950/40 dark:text-rose-200">
+                        @foreach ($errors->all() as $err)
+                            <div>{{ $err }}</div>
+                        @endforeach
                     </div>
-                </div>
+                @endif
 
-                <label for="host">Domínio ou IP</label>
-                <input id="host" name="host" type="text" value="{{ old('host', $host) }}" placeholder="ex: seudominio.com ou 187.77.46.197">
+                <form method="post" action="{{ url('/docker-setup') }}" class="space-y-4">
+                    @csrf
 
-                <div class="hint">
-                    Sugestão detectada: <code>{{ $suggested_url }}</code>
-                </div>
+                    <div>
+                        <label for="domain" class="block text-sm font-medium text-zinc-700 dark:text-zinc-300">Domínio</label>
+                        <input
+                            id="domain"
+                            name="domain"
+                            type="text"
+                            value="{{ old('domain', $host) }}"
+                            placeholder="ex: api.seudominio.com"
+                            class="mt-1.5 block w-full rounded-xl border border-zinc-300 dark:border-zinc-600 bg-white dark:bg-zinc-900 px-4 py-3 text-zinc-900 dark:text-white placeholder-zinc-500 shadow-sm transition hover:border-primary focus:border-primary"
+                            autocomplete="off"
+                            required
+                        />
+                        <p class="mt-2 text-xs text-zinc-500 dark:text-zinc-400">
+                            URL detectada: <span class="font-mono">{{ $suggested_url }}</span>
+                        </p>
+                    </div>
 
-                <button class="btn" type="submit">Salvar e continuar</button>
+                    <button type="submit" class="w-full rounded-xl bg-primary px-4 py-3 font-semibold text-zinc-900 hover:opacity-90 transition">
+                        Salvar e continuar
+                    </button>
 
-                <div class="hint">
-                    Depois de salvar, você será levado ao login. Se for a primeira vez, o login redireciona para criação do admin.
-                </div>
-            </form>
+                    <p class="text-xs text-zinc-500 dark:text-zinc-400">
+                        Após salvar, você será levado ao login. Se for a primeira vez, o login redireciona para criar o admin.
+                    </p>
+                </form>
+            </div>
         </div>
     </div>
 </body>
 </html>
-

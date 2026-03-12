@@ -29,6 +29,14 @@ $existingAppUrl = null;
 if (preg_match("/^\\s*APP_URL\\s*=\\s*(.+)\\s*$/mi", $content, $m)) {
     $existingAppUrl = trim((string) ($m[1] ?? ""), " \\t\\n\\r\\0\\x0B\\\"\\x27`");
 }
+$existingCronSecret = null;
+if (preg_match("/^\\s*CRON_SECRET\\s*=\\s*(.*)\\s*$/mi", $content, $m)) {
+    $existingCronSecret = trim((string) ($m[1] ?? ""), " \\t\\n\\r\\0\\x0B\\\"\\x27`");
+}
+$cronSecret = $existingCronSecret;
+if (!is_string($cronSecret) || $cronSecret === "") {
+    $cronSecret = rtrim(strtr(base64_encode(random_bytes(24)), "+/", "-_"), "=");
+}
 $appUrl = $setupDone ? ($sharedAppUrl !== "" ? $sharedAppUrl : $existingAppUrl) : ((getenv("GETFY_APP_URL") ?: getenv("APP_URL")) ?: "http://localhost");
 $vars = [
     "APP_NAME" => getenv("APP_NAME") ?: "Getfy",
@@ -39,6 +47,7 @@ $vars = [
     "APP_INSTALLED" => getenv("APP_INSTALLED") ?: "true",
     "DOCKER_SETUP_DONE" => $setupDone ? "true" : null,
     "APP_AUTO_MIGRATE" => getenv("APP_AUTO_MIGRATE") ?: "false",
+    "CRON_SECRET" => $cronSecret ?: null,
     "DB_CONNECTION" => getenv("DB_CONNECTION") ?: "mysql",
     "DB_HOST" => getenv("DB_HOST") ?: "mysql",
     "DB_PORT" => getenv("DB_PORT") ?: "3306",

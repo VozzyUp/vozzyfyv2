@@ -17,46 +17,54 @@ class DockerSetupController extends Controller
         $host = trim(explode(',', $forwardedHost)[0] ?? '');
         $host = $host !== '' ? $host : $request->getHost();
 
-        $forwardedPort = (string) $request->headers->get('x-forwarded-port', '');
-        $port = ctype_digit($forwardedPort) ? (int) $forwardedPort : $request->getPort();
-        $defaultPort = $scheme === 'https' ? 443 : 80;
-        $suggestedUrl = $scheme . '://' . $host . (($port !== $defaultPort && $port !== 0) ? (':' . $port) : '');
+        $suggestedUrl = $scheme . '://' . $host;
 
         return view('docker-setup', [
             'suggested_url' => $suggestedUrl,
             'host' => $host,
             'scheme' => $scheme,
-            'port' => $port,
         ]);
     }
 
     public function store(Request $request): RedirectResponse
     {
         $validated = $request->validate([
-            'scheme' => ['required', 'in:http,https'],
-            'host' => ['required', 'string', 'max:255'],
-            'port' => ['nullable', 'integer', 'min:1', 'max:65535'],
+            'domain' => ['required', 'string', 'max:255'],
         ]);
 
-        $scheme = $validated['scheme'];
-        $host = strtolower(trim((string) $validated['host']));
+        $forwardedProto = (string) $request->headers->get('x-forwarded-proto', '');
+        $scheme = str_contains(strtolower($forwardedProto), 'https') ? 'https' : ($request->isSecure() ? 'https' : 'http');
+
+        $host = strtolower(trim((string) $validated['domain']));
         $host = preg_replace('#^https?://#', '', $host);
         $host = explode('/', $host)[0] ?? $host;
+        $host = explode('?', $host)[0] ?? $host;
+        if (substr_count($host, ':') === 1) {
+            $host = explode(':', $host)[0] ?? $host;
+        }
         $host = rtrim(trim($host), '.');
         $host = preg_replace('/\s+/', '', $host);
         $host = $host ?: $request->getHost();
 
-        $port = $validated['port'] ?? null;
-        $defaultPort = $scheme === 'https' ? 443 : 80;
         $url = $scheme . '://' . $host;
-        if ($port !== null && (int) $port !== $defaultPort) {
-            $url .= ':' . (int) $port;
+
+        $cronSecret = null;
+        $envPath = base_path('.env');
+        if (is_file($envPath)) {
+            $env = (string) file_get_contents($envPath);
+            if (preg_match('/^\s*CRON_SECRET\s*=\s*(.*)\s*$/mi', $env, $m)) {
+                $cronSecret = trim((string) ($m[1] ?? ''), " \t\n\r\0\x0B\"'");
+            }
+        }
+        if ($cronSecret === null || $cronSecret === '') {
+            $cronSecret = rtrim(strtr(base64_encode(random_bytes(24)), '+/', '-_'), '=');
         }
 
         $this->setEnv([
             'APP_URL' => $url,
             'DOCKER_SETUP_DONE' => 'true',
             'APP_INSTALLED' => 'true',
+            'CRON_SECRET' => $cronSecret,
         ]);
 
         $dockerDir = base_path('.docker');
