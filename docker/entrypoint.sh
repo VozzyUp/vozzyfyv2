@@ -20,14 +20,14 @@ php -r '
 $envFile = ".env";
 $content = file_exists($envFile) ? (string) file_get_contents($envFile) : "";
 $setupDoneInEnv = (bool) preg_match("/^\\s*DOCKER_SETUP_DONE\\s*=\\s*[\"\\x27]?true[\"\\x27]?\\s*(?:#|$)/mi", $content);
-$setupDoneShared = is_file(".docker/setup.done");
+$sharedAppUrl = trim((string) @file_get_contents(".docker/app.url"));
+$setupDoneShared = is_file(".docker/setup.done") && $sharedAppUrl !== "" && preg_match("#^https?://#i", $sharedAppUrl);
 $setupDone = $setupDoneInEnv || $setupDoneShared;
 
 $existingAppUrl = null;
 if (preg_match("/^\\s*APP_URL\\s*=\\s*(.+)\\s*$/mi", $content, $m)) {
     $existingAppUrl = trim((string) ($m[1] ?? ""), " \\t\\n\\r\\0\\x0B\\\"\\x27");
 }
-$sharedAppUrl = trim((string) @file_get_contents(".docker/app.url"));
 $appUrl = $setupDone ? ($sharedAppUrl !== "" ? $sharedAppUrl : $existingAppUrl) : ((getenv("GETFY_APP_URL") ?: getenv("APP_URL")) ?: "http://localhost");
 $vars = [
     "APP_NAME" => getenv("APP_NAME") ?: "Getfy",
