@@ -40,6 +40,7 @@ class AppServiceProvider extends ServiceProvider
      */
     public function boot(): void
     {
+        $this->ensureRuntimeDirectories();
         $this->fallbackRedisToDatabase();
         if (DockerSetupState::isDocker() && class_exists(\Illuminate\Support\Facades\Vite::class)) {
             \Illuminate\Support\Facades\Vite::useHotFile(storage_path('framework/vite.hot'));
@@ -83,6 +84,29 @@ class AppServiceProvider extends ServiceProvider
                 ->line('Este link expira em '.$expire.' minutos.')
                 ->line('Se você não solicitou a redefinição de senha, nenhuma ação é necessária.');
         });
+    }
+
+    private function ensureRuntimeDirectories(): void
+    {
+        static $done = false;
+        if ($done) {
+            return;
+        }
+        $done = true;
+
+        $paths = [
+            storage_path('framework/cache/data'),
+            storage_path('framework/sessions'),
+            storage_path('framework/views'),
+            storage_path('logs'),
+            base_path('bootstrap/cache'),
+        ];
+
+        foreach ($paths as $path) {
+            if (! is_dir($path)) {
+                @mkdir($path, 0755, true);
+            }
+        }
     }
 
     /**

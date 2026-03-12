@@ -14,15 +14,40 @@ class DockerSetupState
             return true;
         }
 
-        if (is_file('/.dockerenv')) {
+        $dockerenv = '/.dockerenv';
+        if (self::isPathAllowedByOpenBasedir($dockerenv) && is_file($dockerenv)) {
             return true;
         }
 
         $cgroupPath = '/proc/1/cgroup';
-        if (is_file($cgroupPath)) {
+        if (self::isPathAllowedByOpenBasedir($cgroupPath) && is_file($cgroupPath)) {
             $cgroup = (string) @file_get_contents($cgroupPath);
             $cgroup = strtolower($cgroup);
             if (str_contains($cgroup, 'docker') || str_contains($cgroup, 'kubepods') || str_contains($cgroup, 'containerd')) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private static function isPathAllowedByOpenBasedir(string $path): bool
+    {
+        $openBasedir = ini_get('open_basedir');
+        if (! is_string($openBasedir) || trim($openBasedir) === '') {
+            return true;
+        }
+
+        $separator = DIRECTORY_SEPARATOR === '\\' ? ';' : ':';
+        $parts = array_values(array_filter(array_map('trim', explode($separator, $openBasedir)), fn ($v) => $v !== ''));
+        foreach ($parts as $allowed) {
+            if ($allowed === '.' || $allowed === './') {
+                continue;
+            }
+            if ($allowed === '/') {
+                return true;
+            }
+            if (str_starts_with($path, $allowed)) {
                 return true;
             }
         }

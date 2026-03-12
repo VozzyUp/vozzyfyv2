@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Models\Setting;
 use App\Support\CheckoutTranslations;
+use App\Support\DockerSetupState;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Crypt;
 use Inertia\Inertia;
@@ -31,7 +32,7 @@ class SettingsController extends Controller
 
         $gitAvailable = is_dir(base_path('.git'));
         $cloudMode = (bool) config('getfy.cloud_mode', false);
-        $dockerMode = is_file('/.dockerenv') || filter_var(env('GETFY_DOCKER', false), FILTER_VALIDATE_BOOLEAN);
+        $dockerMode = DockerSetupState::isDocker();
         $cronSecret = config('getfy.cron_secret');
         $appUrl = rtrim(config('app.url'), '/');
         $cronUrl = $cronSecret ? $appUrl . '/cron?token=' . urlencode((string) $cronSecret) : null;

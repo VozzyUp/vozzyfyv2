@@ -459,6 +459,18 @@ PWA_VAPID_PRIVATE=
     }
 
     if ($step === 4) {
+        $dirs = [
+            $basePath . '/storage/framework/cache/data',
+            $basePath . '/storage/framework/sessions',
+            $basePath . '/storage/framework/views',
+            $basePath . '/storage/logs',
+            $basePath . '/bootstrap/cache',
+        ];
+        foreach ($dirs as $d) {
+            if (!is_dir($d)) {
+                @mkdir($d, 0755, true);
+            }
+        }
         $run([$phpExe, $artisan, 'storage:link']);
         if (!$run([$phpExe, $artisan, 'pwa:vapid'])) {
             try {
@@ -475,8 +487,10 @@ PWA_VAPID_PRIVATE=
             }
         }
         $cronSecret = bin2hex(random_bytes(24));
-        file_put_contents($envPath, "\nCRON_SECRET={$cronSecret}\n", FILE_APPEND);
         $envContent = file_get_contents($envPath);
+        if (!preg_match('/^\s*CRON_SECRET\s*=/mi', $envContent)) {
+            file_put_contents($envPath, "\nCRON_SECRET={$cronSecret}\n", FILE_APPEND);
+        }
         $envContent = preg_replace('/^APP_INSTALLED\s*=.*$/mi', 'APP_INSTALLED=true', $envContent);
         file_put_contents($envPath, $envContent);
         $run([$phpExe, $artisan, 'config:cache']);
