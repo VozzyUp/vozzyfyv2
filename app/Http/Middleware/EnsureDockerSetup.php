@@ -3,6 +3,7 @@
 namespace App\Http\Middleware;
 
 use Closure;
+use App\Support\DockerSetupState;
 use Illuminate\Http\Request;
 use Symfony\Component\HttpFoundation\Response;
 
@@ -10,11 +11,11 @@ class EnsureDockerSetup
 {
     public function handle(Request $request, Closure $next): Response
     {
-        if (! $this->isDocker()) {
+        if (! DockerSetupState::isDocker()) {
             return $next($request);
         }
 
-        if ($this->isSetupDone()) {
+        if (DockerSetupState::isSetupDone()) {
             return $next($request);
         }
 
@@ -35,26 +36,5 @@ class EnsureDockerSetup
         }
 
         return redirect('/docker-setup', 302);
-    }
-
-    private function isDocker(): bool
-    {
-        $val = env('GETFY_DOCKER', false);
-        if (is_string($val)) {
-            $val = strtolower(trim($val));
-            return in_array($val, ['1', 'true', 'yes', 'on'], true);
-        }
-        return (bool) $val;
-    }
-
-    private function isSetupDone(): bool
-    {
-        $envPath = base_path('.env');
-        if (! is_file($envPath)) {
-            return false;
-        }
-        $content = (string) file_get_contents($envPath);
-
-        return (bool) preg_match('/^\s*DOCKER_SETUP_DONE\s*=\s*["\']?true["\']?\s*(?:#|$)/mi', $content);
     }
 }

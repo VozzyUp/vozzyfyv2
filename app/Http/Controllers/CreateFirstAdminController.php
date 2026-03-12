@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Models\User;
+use App\Support\DockerSetupState;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
@@ -18,6 +19,10 @@ class CreateFirstAdminController extends Controller
      */
     public function show(): Response|RedirectResponse
     {
+        if (DockerSetupState::isDocker() && ! DockerSetupState::isSetupDone()) {
+            return redirect('/docker-setup');
+        }
+
         if (User::count() > 0) {
             return redirect()->route('login');
         }
@@ -30,6 +35,10 @@ class CreateFirstAdminController extends Controller
      */
     public function store(Request $request): RedirectResponse
     {
+        if (DockerSetupState::isDocker() && ! DockerSetupState::isSetupDone()) {
+            return redirect('/docker-setup');
+        }
+
         if (User::count() > 0) {
             abort(403, 'O primeiro administrador já foi criado.');
         }

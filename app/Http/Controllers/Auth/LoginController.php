@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Auth;
 use App\Http\Controllers\Controller;
 use App\Models\User;
 use App\Services\MemberAreaResolver;
+use App\Support\DockerSetupState;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
@@ -19,6 +20,10 @@ class LoginController extends Controller
      */
     public function showLoginForm(Request $request): Response|RedirectResponse
     {
+        if (DockerSetupState::isDocker() && ! DockerSetupState::isSetupDone()) {
+            return redirect('/docker-setup');
+        }
+
         if (User::count() === 0) {
             return redirect()->route('criar-admin');
         }
@@ -40,6 +45,10 @@ class LoginController extends Controller
 
     public function login(Request $request): RedirectResponse
     {
+        if (DockerSetupState::isDocker() && ! DockerSetupState::isSetupDone()) {
+            return redirect('/docker-setup');
+        }
+
         $resolved = app(MemberAreaResolver::class)->resolve($request);
         if ($resolved && in_array($resolved['access_type'], ['subdomain', 'custom'], true)) {
             $request->attributes->set('member_area_product', $resolved['product']);
