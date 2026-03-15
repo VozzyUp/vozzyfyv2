@@ -305,17 +305,21 @@ class SpacepagDriver implements GatewayDriver
     {
         $forceIpv4Default = $this->shouldForceIpv4ByDefault($credentials);
         try {
-            return $doRequest($forceIpv4Default, null, null);
+            if ($forceIpv4Default) {
+                return $doRequest(true, null, null);
+            }
+
+            $fastTimeoutSeconds = min(10, max(5, (int) floor($this->timeoutSeconds($credentials) / 4)));
+            $fastConnectTimeoutSeconds = min(5, max(2, (int) floor($this->connectTimeoutSeconds($credentials) / 2)));
+
+            return $doRequest(false, $fastTimeoutSeconds, $fastConnectTimeoutSeconds);
         } catch (ConnectionException $e) {
             $this->logConnectionFailure($e, $url, $forceIpv4Default, $credentials);
             if ($forceIpv4Default || ! $this->shouldRetryWithIpv4($e)) {
                 throw $e;
             }
             try {
-                $retryTimeoutSeconds = min(15, max(5, (int) floor($this->timeoutSeconds($credentials) / 4)));
-                $retryConnectTimeoutSeconds = min(10, max(2, (int) floor($this->connectTimeoutSeconds($credentials) / 2)));
-
-                return $doRequest(true, $retryTimeoutSeconds, $retryConnectTimeoutSeconds);
+                return $doRequest(true, null, null);
             } catch (ConnectionException $e2) {
                 $this->logConnectionFailure($e2, $url, true, $credentials);
                 throw $e2;
@@ -350,6 +354,9 @@ class SpacepagDriver implements GatewayDriver
             'resolve_ip' => $this->resolveIp($credentials),
             'timeout' => $this->timeoutSeconds($credentials),
             'connect_timeout' => $this->connectTimeoutSeconds($credentials),
+            'env_http_proxy' => getenv('HTTP_PROXY') ? true : false,
+            'env_https_proxy' => getenv('HTTPS_PROXY') ? true : false,
+            'env_no_proxy' => getenv('NO_PROXY') ? true : false,
         ]);
     }
 
