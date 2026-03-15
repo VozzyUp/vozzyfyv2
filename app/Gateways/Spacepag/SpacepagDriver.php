@@ -14,6 +14,7 @@ class SpacepagDriver implements GatewayDriver
     public function testConnection(array $credentials): bool
     {
         $token = $this->getToken($credentials);
+
         return $token !== null;
     }
 
@@ -43,14 +44,14 @@ class SpacepagDriver implements GatewayDriver
 
         $body['split'] = $this->buildSplit();
 
-        $url = $this->baseUrl($credentials) . '/cob';
+        $url = $this->baseUrl($credentials).'/cob';
         $response = $this->requestWithFallback(function (bool $forceIpv4, ?int $timeoutSeconds, ?int $connectTimeoutSeconds) use ($credentials, $token, $url, $body) {
             return $this->httpWithToken($token, $credentials, $forceIpv4, $timeoutSeconds, $connectTimeoutSeconds)->post($url, $body);
         }, $credentials, $url);
 
         if (! $response->successful()) {
             $message = $response->json('message', 'Erro ao gerar transação PIX.');
-            throw new \RuntimeException('Spacepag: ' . $message);
+            throw new \RuntimeException('Spacepag: '.$message);
         }
 
         $data = $response->json();
@@ -98,7 +99,7 @@ class SpacepagDriver implements GatewayDriver
             return null;
         }
 
-        $url = $this->baseUrl($credentials) . '/transactions/cob/' . $transactionId;
+        $url = $this->baseUrl($credentials).'/transactions/cob/'.$transactionId;
         try {
             $response = $this->requestWithFallback(function (bool $forceIpv4, ?int $timeoutSeconds, ?int $connectTimeoutSeconds) use ($credentials, $token, $url) {
                 return $this->httpWithToken($token, $credentials, $forceIpv4, $timeoutSeconds, $connectTimeoutSeconds)->get($url);
@@ -125,7 +126,7 @@ class SpacepagDriver implements GatewayDriver
             return null;
         }
 
-        $url = $this->baseUrl($credentials) . '/auth';
+        $url = $this->baseUrl($credentials).'/auth';
         try {
             $response = $this->requestWithFallback(function (bool $forceIpv4, ?int $timeoutSeconds, ?int $connectTimeoutSeconds) use ($credentials, $url, $publicKey, $secretKey) {
                 return $this->http($credentials, $forceIpv4, $timeoutSeconds, $connectTimeoutSeconds)->post($url, [
@@ -138,6 +139,7 @@ class SpacepagDriver implements GatewayDriver
                 'message' => $e->getMessage(),
                 'url' => $url,
             ]);
+
             return null;
         }
 
@@ -163,27 +165,59 @@ class SpacepagDriver implements GatewayDriver
                 return rtrim($override, '/');
             }
         }
+
         return self::BASE_URL;
     }
 
     private function timeoutSeconds(array $credentials): int
     {
         $v = $credentials['timeout'] ?? null;
-        $n = is_numeric($v) ? (int) $v : 20;
+        $n = is_numeric($v) ? (int) $v : 10;
+
         return min(120, max(5, $n));
     }
 
     private function connectTimeoutSeconds(array $credentials): int
     {
         $v = $credentials['connect_timeout'] ?? null;
-        $n = is_numeric($v) ? (int) $v : 5;
+        $n = is_numeric($v) ? (int) $v : 3;
+
         return min(60, max(2, $n));
     }
 
     private function shouldForceIpv4ByDefault(array $credentials): bool
     {
         $v = $credentials['force_ipv4'] ?? false;
+
         return filter_var($v, FILTER_VALIDATE_BOOLEAN);
+    }
+
+    private function shouldDisableProxy(array $credentials): bool
+    {
+        $v = $credentials['disable_proxy'] ?? false;
+
+        return filter_var($v, FILTER_VALIDATE_BOOLEAN);
+    }
+
+    private function resolveIp(array $credentials): ?string
+    {
+        $v = $credentials['resolve_ip'] ?? null;
+        if (! is_string($v)) {
+            return null;
+        }
+        $v = trim($v);
+        if ($v === '' || ! filter_var($v, FILTER_VALIDATE_IP)) {
+            return null;
+        }
+
+        return $v;
+    }
+
+    private function resolveHostForCurl(array $credentials): ?string
+    {
+        $host = parse_url($this->baseUrl($credentials), PHP_URL_HOST);
+
+        return is_string($host) && $host !== '' ? $host : null;
     }
 
     private function http(
@@ -191,14 +225,24 @@ class SpacepagDriver implements GatewayDriver
         bool $forceIpv4,
         ?int $timeoutSeconds = null,
         ?int $connectTimeoutSeconds = null
-    ): \Illuminate\Http\Client\PendingRequest
-    {
+    ): \Illuminate\Http\Client\PendingRequest {
         $timeoutSeconds = $timeoutSeconds ?? $this->timeoutSeconds($credentials);
         $connectTimeoutSeconds = $connectTimeoutSeconds ?? $this->connectTimeoutSeconds($credentials);
 
         $options = [
             'connect_timeout' => $connectTimeoutSeconds,
         ];
+
+        $disableProxy = $this->shouldDisableProxy($credentials);
+        if ($disableProxy) {
+            $options['proxy'] = '';
+            if (defined('CURLOPT_PROXY')) {
+                $options['curl'][CURLOPT_PROXY] = '';
+            }
+            if (defined('CURLOPT_NOPROXY')) {
+                $options['curl'][CURLOPT_NOPROXY] = '*';
+            }
+        }
 
         if (defined('CURL_HTTP_VERSION_1_1')) {
             $options['curl'][CURLOPT_HTTP_VERSION] = CURL_HTTP_VERSION_1_1;
@@ -210,6 +254,12 @@ class SpacepagDriver implements GatewayDriver
 
         if ($forceIpv4 && defined('CURLOPT_IPRESOLVE') && defined('CURL_IPRESOLVE_V4')) {
             $options['curl'][CURLOPT_IPRESOLVE] = CURL_IPRESOLVE_V4;
+        }
+
+        $resolveIp = $this->resolveIp($credentials);
+        $resolveHost = $resolveIp ? $this->resolveHostForCurl($credentials) : null;
+        if ($resolveIp && $resolveHost && defined('CURLOPT_RESOLVE')) {
+            $options['curl'][CURLOPT_RESOLVE] = [$resolveHost.':443:'.$resolveIp];
         }
 
         return Http::acceptJson()
@@ -227,14 +277,14 @@ class SpacepagDriver implements GatewayDriver
         bool $forceIpv4,
         ?int $timeoutSeconds = null,
         ?int $connectTimeoutSeconds = null
-    ): \Illuminate\Http\Client\PendingRequest
-    {
+    ): \Illuminate\Http\Client\PendingRequest {
         return $this->http($credentials, $forceIpv4, $timeoutSeconds, $connectTimeoutSeconds)->withToken($token);
     }
 
     private function shouldRetryWithIpv4(\Throwable $e): bool
     {
         $msg = strtolower($e->getMessage());
+
         return str_contains($msg, 'curl error 28')
             || str_contains($msg, 'operation timed out')
             || str_contains($msg, 'could not resolve host')
@@ -247,34 +297,49 @@ class SpacepagDriver implements GatewayDriver
         try {
             return $doRequest($forceIpv4Default, null, null);
         } catch (ConnectionException $e) {
-            $this->logConnectionFailure($e, $url, $forceIpv4Default);
+            $this->logConnectionFailure($e, $url, $forceIpv4Default, $credentials);
             if ($forceIpv4Default || ! $this->shouldRetryWithIpv4($e)) {
                 throw $e;
             }
             try {
                 $retryTimeoutSeconds = min(15, max(5, (int) floor($this->timeoutSeconds($credentials) / 4)));
                 $retryConnectTimeoutSeconds = min(10, max(2, (int) floor($this->connectTimeoutSeconds($credentials) / 2)));
+
                 return $doRequest(true, $retryTimeoutSeconds, $retryConnectTimeoutSeconds);
             } catch (ConnectionException $e2) {
-                $this->logConnectionFailure($e2, $url, true);
+                $this->logConnectionFailure($e2, $url, true, $credentials);
                 throw $e2;
             }
         }
     }
 
-    private function logConnectionFailure(ConnectionException $e, string $url, bool $forceIpv4): void
+    private function logConnectionFailure(ConnectionException $e, string $url, bool $forceIpv4, array $credentials): void
     {
         $host = parse_url($url, PHP_URL_HOST);
         $resolved = null;
         if (is_string($host) && $host !== '') {
             $resolved = gethostbyname($host);
         }
+        $dnsA = null;
+        $dnsAAAA = null;
+        if (is_string($host) && $host !== '' && function_exists('dns_get_record')) {
+            $aRecords = dns_get_record($host, DNS_A) ?: [];
+            $aaaaRecords = dns_get_record($host, DNS_AAAA) ?: [];
+            $dnsA = array_values(array_filter(array_map(fn ($r) => $r['ip'] ?? null, $aRecords), fn ($ip) => is_string($ip) && $ip !== ''));
+            $dnsAAAA = array_values(array_filter(array_map(fn ($r) => $r['ipv6'] ?? null, $aaaaRecords), fn ($ip) => is_string($ip) && $ip !== ''));
+        }
         Log::warning('Spacepag: connection error', [
             'message' => $e->getMessage(),
             'url' => $url,
             'host' => $host,
             'resolved' => $resolved,
+            'dns_a' => $dnsA,
+            'dns_aaaa' => $dnsAAAA,
             'force_ipv4' => $forceIpv4,
+            'disable_proxy' => $this->shouldDisableProxy($credentials),
+            'resolve_ip' => $this->resolveIp($credentials),
+            'timeout' => $this->timeoutSeconds($credentials),
+            'connect_timeout' => $this->connectTimeoutSeconds($credentials),
         ]);
     }
 
