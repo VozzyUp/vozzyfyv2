@@ -55,6 +55,7 @@ class RelatoriosController extends Controller
             ->get()
             ->map(function ($row) {
                 $label = $this->gatewayLabel($row->gateway);
+
                 return [
                     'metodo' => $row->gateway ?? 'outro',
                     'label' => $label,
@@ -207,7 +208,7 @@ class RelatoriosController extends Controller
             return 'Outro';
         }
         $g = strtolower($gateway);
-        if (str_contains($g, 'pix') || in_array($g, ['spacepag', 'sapcepag'], true)) {
+        if (str_contains($g, 'pix') || in_array($g, ['spacepag'], true)) {
             return 'Pix';
         }
         if (str_contains($g, 'card') || str_contains($g, 'cartao') || str_contains($g, 'cartão') || str_contains($g, 'credito')) {
@@ -216,6 +217,7 @@ class RelatoriosController extends Controller
         if (str_contains($g, 'boleto')) {
             return 'Boleto';
         }
+
         return ucfirst($gateway);
     }
 

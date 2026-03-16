@@ -25,12 +25,14 @@ class VendasController extends Controller
         if (! in_array($statusFilter, self::STATUS_FILTERS, true)) {
             $statusFilter = 'todas';
         }
+
         return $statusFilter;
     }
 
     private function normalizeString(?string $value): ?string
     {
         $v = trim((string) ($value ?? ''));
+
         return $v !== '' ? $v : null;
     }
 
@@ -86,6 +88,7 @@ class VendasController extends Controller
         if ($end) {
             return $query->where('created_at', '<=', $end);
         }
+
         return $query;
     }
 
@@ -95,7 +98,7 @@ class VendasController extends Controller
         if ($q === null) {
             return $query;
         }
-        $like = '%' . str_replace(['%', '_'], ['\\%', '\\_'], $q) . '%';
+        $like = '%'.str_replace(['%', '_'], ['\\%', '\\_'], $q).'%';
 
         return $query->where(function ($sub) use ($like) {
             $sub->where('orders.id', 'like', $like)
@@ -131,7 +134,7 @@ class VendasController extends Controller
             $m = strtolower($method);
             if ($m === 'pix') {
                 $query->where(function ($q) {
-                    $q->whereIn('gateway', ['spacepag', 'sapcepag'])
+                    $q->whereIn('gateway', ['spacepag'])
                         ->orWhereRaw("LOWER(gateway) LIKE '%pix%'");
                 });
             } elseif ($m === 'card') {
@@ -219,7 +222,7 @@ class VendasController extends Controller
                 $arr = $o->toArray();
                 $arr['gateway_label'] = $this->gatewayLabel($o->gateway);
                 $arr['product_display_name'] = $this->productDisplayName($o);
-                $arr['checkout_url'] = url('/c/' . $o->getCheckoutSlug());
+                $arr['checkout_url'] = url('/c/'.$o->getCheckoutSlug());
                 $arr['payment_type_label'] = $this->paymentTypeLabel($o);
 
                 return $arr;
@@ -235,7 +238,7 @@ class VendasController extends Controller
 
         $vendasPix = (clone $statsQuery)
             ->where(function ($q) {
-                $q->whereIn('gateway', ['spacepag', 'sapcepag'])
+                $q->whereIn('gateway', ['spacepag'])
                     ->orWhereRaw("LOWER(gateway) LIKE '%pix%'");
             })
             ->count();
@@ -333,11 +336,11 @@ class VendasController extends Controller
         $headers = ['Data', 'Produto', 'Cliente', 'E-mail', 'Status', 'Método', 'Valor líquido'];
 
         if ($format === 'csv') {
-            $filename = 'vendas_' . date('Y-m-d_His') . '.csv';
+            $filename = 'vendas_'.date('Y-m-d_His').'.csv';
 
             return response()->streamDownload(function () use ($headers, $rows) {
                 $out = fopen('php://output', 'w');
-                fprintf($out, chr(0xEF) . chr(0xBB) . chr(0xBF)); // BOM UTF-8
+                fprintf($out, chr(0xEF).chr(0xBB).chr(0xBF)); // BOM UTF-8
                 fputcsv($out, $headers, ';');
                 foreach ($rows as $r) {
                     fputcsv($out, array_values($r), ';');
@@ -348,22 +351,22 @@ class VendasController extends Controller
             ]);
         }
 
-        $filename = 'vendas_' . date('Y-m-d_His') . '.xls';
+        $filename = 'vendas_'.date('Y-m-d_His').'.xls';
 
         return response()->streamDownload(function () use ($headers, $rows) {
-            $xml = '<?xml version="1.0" encoding="UTF-8"?>' . "\n";
-            $xml .= '<?mso-application progid="Excel.Sheet"?>' . "\n";
-            $xml .= '<Workbook xmlns="urn:schemas-microsoft-com:office:spreadsheet" xmlns:ss="urn:schemas-microsoft-com:office:spreadsheet">' . "\n";
-            $xml .= '<Worksheet ss:Name="Vendas">' . "\n";
-            $xml .= '<Table>' . "\n";
+            $xml = '<?xml version="1.0" encoding="UTF-8"?>'."\n";
+            $xml .= '<?mso-application progid="Excel.Sheet"?>'."\n";
+            $xml .= '<Workbook xmlns="urn:schemas-microsoft-com:office:spreadsheet" xmlns:ss="urn:schemas-microsoft-com:office:spreadsheet">'."\n";
+            $xml .= '<Worksheet ss:Name="Vendas">'."\n";
+            $xml .= '<Table>'."\n";
 
             foreach (array_merge([$headers], array_map(fn ($r) => array_values($r), $rows)) as $row) {
                 $xml .= '<Row>';
                 foreach ($row as $cell) {
                     $cell = htmlspecialchars((string) $cell, ENT_XML1, 'UTF-8');
-                    $xml .= '<Cell><Data ss:Type="String">' . $cell . '</Data></Cell>';
+                    $xml .= '<Cell><Data ss:Type="String">'.$cell.'</Data></Cell>';
                 }
-                $xml .= '</Row>' . "\n";
+                $xml .= '</Row>'."\n";
             }
 
             $xml .= '</Table></Worksheet></Workbook>';
@@ -457,7 +460,7 @@ class VendasController extends Controller
         } catch (\Throwable $e) {
             return response()->json([
                 'success' => false,
-                'message' => 'Pedido marcado como pago, mas houve um erro ao conceder acesso: ' . $e->getMessage(),
+                'message' => 'Pedido marcado como pago, mas houve um erro ao conceder acesso: '.$e->getMessage(),
             ], 500);
         }
 
@@ -470,7 +473,7 @@ class VendasController extends Controller
             return 'Outro';
         }
         $g = strtolower($gateway);
-        if (in_array($g, ['spacepag', 'sapcepag'], true) || str_contains($g, 'pix')) {
+        if (in_array($g, ['spacepag'], true) || str_contains($g, 'pix')) {
             return 'PIX';
         }
         if ($g === 'card' || str_contains($g, 'cartao') || str_contains($g, 'cartão') || str_contains($g, 'credito')) {
@@ -494,9 +497,9 @@ class VendasController extends Controller
         }
         $name = $product->name;
         if ($order->productOffer) {
-            $name .= ' - ' . $order->productOffer->name;
+            $name .= ' - '.$order->productOffer->name;
         } elseif ($order->subscriptionPlan) {
-            $name .= ' - ' . $order->subscriptionPlan->name;
+            $name .= ' - '.$order->subscriptionPlan->name;
         }
 
         return $name;

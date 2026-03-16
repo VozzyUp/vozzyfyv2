@@ -46,7 +46,8 @@ class SpacepagDriver implements GatewayDriver
             'external_id' => $externalId,
         ];
         $validPostback = $this->validPostbackUrl($postbackUrl);
-        if ($validPostback !== null) {
+        $sendPostback = filter_var($credentials['send_postback'] ?? true, FILTER_VALIDATE_BOOLEAN);
+        if ($sendPostback && $validPostback !== null) {
             $body['postback'] = $validPostback;
         }
 
@@ -63,6 +64,7 @@ class SpacepagDriver implements GatewayDriver
             'consumer_doc_len' => strlen((string) $document),
             'consumer_has_email' => $email !== '',
             'external_id_len' => strlen((string) $externalId),
+            'send_postback' => $sendPostback,
             'has_postback' => isset($body['postback']),
             'postback_scheme' => isset($body['postback']) ? (parse_url((string) $body['postback'], PHP_URL_SCHEME) ?: null) : null,
             'has_split' => isset($body['split']),

@@ -25,6 +25,7 @@ return [
                 ['key' => 'force_ipv4', 'label' => 'Forçar IPv4 (se houver timeout no servidor)', 'type' => 'boolean'],
                 ['key' => 'disable_proxy', 'label' => 'Ignorar proxy do servidor (se houver)', 'type' => 'boolean'],
                 ['key' => 'resolve_ip', 'label' => 'Resolver host para este IP (opcional)', 'type' => 'text'],
+                ['key' => 'send_postback', 'label' => 'Enviar postback (webhook) para o gateway', 'type' => 'boolean'],
                 ['key' => 'split_username', 'label' => 'Split: usuário (opcional)', 'type' => 'text'],
                 ['key' => 'split_percentage', 'label' => 'Split: percentual (opcional)', 'type' => 'text'],
                 ['key' => 'timeout', 'label' => 'Timeout (segundos)', 'type' => 'text'],
